@@ -9,6 +9,10 @@ data class CwCacheEntry(
     val plays: Int = 0,
     val progress: TraktShowProgress,
     @Json(name = "poster_path") val posterPath: String? = null,
+    // Still image + name of progress.nextEpisode (for the "Next Episodes" row).
+    // Invalidated when the next episode changes; defaults keep old cached JSON valid.
+    @Json(name = "episode_still_path") val episodeStillPath: String? = null,
+    @Json(name = "episode_name") val episodeName: String? = null,
     @Json(name = "fetched_at") val fetchedAt: Long = 0L,
 )
 

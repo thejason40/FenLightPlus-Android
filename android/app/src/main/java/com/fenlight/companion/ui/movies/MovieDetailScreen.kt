@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +30,7 @@ import com.fenlight.companion.FenLightApp
 import com.fenlight.companion.ui.components.CastRow
 import com.fenlight.companion.ui.components.ErrorMessage
 import com.fenlight.companion.ui.components.MediaCard
+import com.fenlight.companion.ui.components.PlaybackOptionsSheet
 import com.fenlight.companion.ui.components.rememberPlayMessageSnackbar
 
 @Composable
@@ -48,21 +50,38 @@ fun MovieDetailScreen(
     // Snackbar for play feedback
     val snackbarHostState = rememberPlayMessageSnackbar(state.playMessage) { vm.clearPlayMessage() }
 
+    var showPlaybackOptions by remember { mutableStateOf(false) }
+    if (showPlaybackOptions && movie != null) {
+        PlaybackOptionsSheet(
+            onSelect = { mode -> vm.playMovie(movie, mode) },
+            onDismiss = { showPlaybackOptions = false },
+        )
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (movie != null) {
                 Surface(tonalElevation = 3.dp) {
-                    Button(
-                        onClick = { vm.playMovie(movie) },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp)
                             .navigationBarsPadding(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Play on Kodi")
+                        Button(
+                            onClick = { vm.playMovie(movie) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Play on Kodi")
+                        }
+                        FilledTonalIconButton(onClick = { showPlaybackOptions = true }) {
+                            Icon(Icons.Default.Tune, contentDescription = "Playback options")
+                        }
                     }
                 }
             }

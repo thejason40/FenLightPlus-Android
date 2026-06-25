@@ -122,6 +122,39 @@ class ListManagementViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
+    fun markWatched(tmdbId: Int, mediaType: String) {
+        viewModelScope.launch {
+            try {
+                app.authedTraktApi.addToHistory(
+                    mapOf(traktKey(mediaType) to listOf(mapOf("ids" to mapOf("tmdb" to tmdbId)))),
+                )
+                invalidateContinueWatching(mediaType)
+                toast("Marked as watched")
+            } catch (e: Exception) {
+                toast("Failed: ${e.message}")
+            }
+        }
+    }
+
+    fun markUnwatched(tmdbId: Int, mediaType: String) {
+        viewModelScope.launch {
+            try {
+                app.authedTraktApi.removeFromHistory(
+                    mapOf(traktKey(mediaType) to listOf(mapOf("ids" to mapOf("tmdb" to tmdbId)))),
+                )
+                invalidateContinueWatching(mediaType)
+                toast("Marked as unwatched")
+            } catch (e: Exception) {
+                toast("Failed: ${e.message}")
+            }
+        }
+    }
+
+    // Watched changes for shows affect Continue Watching; drop the cache so it re-syncs.
+    private suspend fun invalidateContinueWatching(mediaType: String) {
+        if (MediaType.from(mediaType) == MediaType.TV) app.prefs.saveTraktCwCache("")
+    }
+
     fun addToTraktList(tmdbId: Int, mediaType: String, slug: String) {
         viewModelScope.launch {
             try {

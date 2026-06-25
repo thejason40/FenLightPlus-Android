@@ -56,35 +56,76 @@ class KodiRpc(
         call("Player.Open", params)
     }
 
-    suspend fun playMovieViaFenLight(tmdbId: Int, title: String, year: Int) {
-        val pluginUrl = buildString {
-            append("plugin://plugin.video.fenlight/?mode=playback.media")
-            append("&media_type=movie&autoplay=true")
-            append("&tmdb_id=$tmdbId")
-            append("&title=${title.encodeUrl()}")
-            append("&year=$year")
-        }
-        playUrl(pluginUrl)
+    suspend fun playMovieViaFenLight(tmdbId: Int, title: String, year: Int, mode: PlaybackMode = PlaybackMode.DEFAULT) {
+        playUrl(buildMovieUrl(tmdbId, title, year, mode))
     }
 
+    /**
+     * Sends an episode to FenLight+ for playback.
+     *
+     * When [numEpisodes] is greater than 1, FenLight+ binges that many episodes
+     * back-to-back starting from the given one (it resolves each subsequent
+     * episode itself via the `num_episodes` plugin parameter).
+     */
     suspend fun playEpisodeViaFenLight(
         tmdbId: Int,
         title: String,
         year: Int,
         season: Int,
         episode: Int,
+        numEpisodes: Int? = null,
+        mode: PlaybackMode = PlaybackMode.DEFAULT,
     ) {
-        val pluginUrl = buildString {
+        playUrl(buildEpisodeUrl(tmdbId, title, year, season, episode, numEpisodes, mode))
+    }
+
+    /**
+     * How FenLight+ should resolve a stream. DEFAULT autoplays the best match;
+     * the others turn autoplay off so the source dialog appears on the Kodi device,
+     * optionally widening the scrapers / relaxing filters.
+     */
+    enum class PlaybackMode(val autoplay: Boolean, val extraParams: Map<String, String>) {
+        DEFAULT(true, emptyMap()),
+        SELECT_SOURCE(false, emptyMap()),
+        ALL_SOURCES(false, mapOf("disabled_ext_ignored" to "true", "prescrape" to "false")),
+        IGNORE_FILTERS(false, mapOf("ignore_scrape_filters" to "true", "prescrape" to "false")),
+    }
+
+    companion object {
+        private fun String.encodeUrl() = java.net.URLEncoder.encode(this, "UTF-8")
+
+        private fun StringBuilder.appendMode(mode: PlaybackMode) {
+            append("&autoplay=${mode.autoplay}")
+            mode.extraParams.forEach { (k, v) -> append("&$k=$v") }
+        }
+
+        fun buildMovieUrl(tmdbId: Int, title: String, year: Int, mode: PlaybackMode = PlaybackMode.DEFAULT): String = buildString {
             append("plugin://plugin.video.fenlight/?mode=playback.media")
-            append("&media_type=episode&autoplay=true")
+            append("&media_type=movie")
+            append("&tmdb_id=$tmdbId")
+            append("&title=${title.encodeUrl()}")
+            append("&year=$year")
+            appendMode(mode)
+        }
+
+        fun buildEpisodeUrl(
+            tmdbId: Int,
+            title: String,
+            year: Int,
+            season: Int,
+            episode: Int,
+            numEpisodes: Int? = null,
+            mode: PlaybackMode = PlaybackMode.DEFAULT,
+        ): String = buildString {
+            append("plugin://plugin.video.fenlight/?mode=playback.media")
+            append("&media_type=episode")
             append("&tmdb_id=$tmdbId")
             append("&title=${title.encodeUrl()}")
             append("&year=$year")
             append("&season=$season")
             append("&episode=$episode")
+            if (numEpisodes != null && numEpisodes > 1) append("&num_episodes=$numEpisodes")
+            appendMode(mode)
         }
-        playUrl(pluginUrl)
     }
-
-    private fun String.encodeUrl() = java.net.URLEncoder.encode(this, "UTF-8")
 }

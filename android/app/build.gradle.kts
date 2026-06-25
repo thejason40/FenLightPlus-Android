@@ -19,8 +19,8 @@ android {
         applicationId = "com.fenlight.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.6.0"
         buildConfigField("String", "TMDB_READ_ACCESS_TOKEN", "\"${props["TMDB_READ_ACCESS_TOKEN"]}\"")
         buildConfigField("String", "TRAKT_CLIENT_ID", "\"${props["TRAKT_CLIENT_ID"]}\"")
         buildConfigField("String", "TRAKT_CLIENT_SECRET", "\"${props["TRAKT_CLIENT_SECRET"]}\"")
@@ -79,6 +79,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.browser)
     implementation(libs.material)
+    implementation(libs.reorderable)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.moshi)
     implementation(libs.okhttp)

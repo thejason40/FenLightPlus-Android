@@ -37,6 +37,10 @@ class AppPreferences(private val context: Context) {
 
         private val MOVIE_BROWSE_ROWS = stringPreferencesKey("movie_browse_rows")
         private val TV_BROWSE_ROWS    = stringPreferencesKey("tv_browse_rows")
+        // True once the saved row list represents the FULL order (incl. default rows),
+        // so default rows are no longer force-seeded and deletions of them stick.
+        private val MOVIE_BROWSE_ROWS_MIGRATED = booleanPreferencesKey("movie_browse_rows_migrated")
+        private val TV_BROWSE_ROWS_MIGRATED    = booleanPreferencesKey("tv_browse_rows_migrated")
 
         private val TMDB_USERNAME = stringPreferencesKey("tmdb_username")
         private val TRAKT_USERNAME = stringPreferencesKey("trakt_username")
@@ -72,6 +76,8 @@ class AppPreferences(private val context: Context) {
 
     val movieBrowseRowsJson: Flow<String> = context.dataStore.data.map { it[MOVIE_BROWSE_ROWS] ?: "" }
     val tvBrowseRowsJson: Flow<String> = context.dataStore.data.map { it[TV_BROWSE_ROWS] ?: "" }
+    val movieBrowseRowsMigrated: Flow<Boolean> = context.dataStore.data.map { it[MOVIE_BROWSE_ROWS_MIGRATED] ?: false }
+    val tvBrowseRowsMigrated: Flow<Boolean> = context.dataStore.data.map { it[TV_BROWSE_ROWS_MIGRATED] ?: false }
 
     val tmdbUsername: Flow<String> = context.dataStore.data.map { it[TMDB_USERNAME] ?: "" }
     val traktUsername: Flow<String> = context.dataStore.data.map { it[TRAKT_USERNAME] ?: "" }
@@ -195,6 +201,14 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit {
             if (json.isBlank()) it.remove(TV_BROWSE_ROWS) else it[TV_BROWSE_ROWS] = json
         }
+    }
+
+    suspend fun saveMovieBrowseRowsMigrated(value: Boolean) {
+        context.dataStore.edit { it[MOVIE_BROWSE_ROWS_MIGRATED] = value }
+    }
+
+    suspend fun saveTvBrowseRowsMigrated(value: Boolean) {
+        context.dataStore.edit { it[TV_BROWSE_ROWS_MIGRATED] = value }
     }
 
     suspend fun saveTraktCwCache(json: String) {

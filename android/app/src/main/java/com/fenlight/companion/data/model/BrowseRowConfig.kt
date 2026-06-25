@@ -7,6 +7,7 @@ enum class RowType {
     POPULAR, TRENDING, NOW_PLAYING, UPCOMING, TOP_RATED,
     ON_THE_AIR, AIRING_TODAY, CUSTOM,
     TMDB_LIST, TRAKT_LIST,
+    NEXT_EPISODES,   // TV only: in-progress shows from Trakt, each pointing at its next unwatched episode
 }
 
 @JsonClass(generateAdapter = true)

@@ -3,8 +3,10 @@ package com.fenlight.companion.ui.media
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
@@ -13,8 +15,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fenlight.companion.data.model.BrowseRowConfig
 import com.fenlight.companion.data.model.MediaType
+import com.fenlight.companion.data.model.RowType
 import com.fenlight.companion.data.model.TraktList
 import com.fenlight.companion.ui.components.*
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,6 +30,7 @@ fun MediaBrowseScreen(
     onShowSimilar: (Int) -> Unit = {},
     onSeeAll: (BrowseRowConfig) -> Unit = {},
     onOpenPublicList: ((TraktList) -> Unit)? = null,
+    onEpisodeClick: (showId: Int, season: Int, episode: Int) -> Unit = { _, _, _ -> },
     vm: MediaHomeViewModel,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -56,6 +62,7 @@ fun MediaBrowseScreen(
             watchProviders = state.watchProviders,
             availableTmdbLists = state.availableTmdbLists,
             availableTraktLists = state.availableTraktLists,
+            hasTraktAuth = state.hasTraktAuth,
             onTypeChange = vm::onPendingRowTypeChange,
             onLabelChange = vm::onPendingRowLabelChange,
             onFiltersChange = vm::onPendingRowFiltersChange,
@@ -67,27 +74,54 @@ fun MediaBrowseScreen(
         )
     }
 
+    val lazyListState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val fromId = from.key as? String ?: return@rememberReorderableLazyListState
+        val toId = to.key as? String ?: return@rememberReorderableLazyListState
+        vm.moveRow(fromId, toId)
+    }
+
     PullToRefreshBox(
         isRefreshing = state.isRefreshing,
         onRefresh = vm::refresh,
         modifier = Modifier.fillMaxSize(),
     ) {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = lazyListState, modifier = Modifier.fillMaxSize()) {
             items(state.rows, key = { it.config.id }) { rowState ->
-                val fixedIds = listOf("fixed_popular", "fixed_trending")
-                BrowseRow(
-                    state = rowState,
-                    onItemClick = { onItemClick(it.id) },
-                    onItemLongClick = { selectedItem = it },
-                    onSeeAll = { onSeeAll(rowState.config) },
-                    onRemove = if (rowState.config.id !in fixedIds) {
-                        { vm.removeRow(rowState.config.id) }
-                    } else null,
-                    onRetry = { vm.retryRow(rowState.config.id) },
-                )
+                ReorderableItem(reorderState, key = rowState.config.id) { isDragging ->
+                    Surface(shadowElevation = if (isDragging) 6.dp else 0.dp) {
+                        BrowseRow(
+                            state = rowState,
+                            onItemClick = { item ->
+                                if (item.nextSeason != null && item.nextEpisode != null)
+                                    onEpisodeClick(item.id, item.nextSeason, item.nextEpisode)
+                                else onItemClick(item.id)
+                            },
+                            onItemLongClick = { selectedItem = it },
+                            onSeeAll = { onSeeAll(rowState.config) },
+                            onRemove = { vm.removeRow(rowState.config.id) },
+                            onRetry = { vm.retryRow(rowState.config.id) },
+                            showSeeAll = rowState.config.type != RowType.NEXT_EPISODES,
+                            dragHandle = {
+                                IconButton(
+                                    onClick = {},
+                                    modifier = Modifier.draggableHandle(
+                                        onDragStopped = { vm.persistRows() },
+                                    ),
+                                ) {
+                                    Icon(
+                                        Icons.Default.DragHandle,
+                                        contentDescription = "Reorder row",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
                 HorizontalDivider()
             }
-            item {
+            item(key = "add_row") {
                 TextButton(
                     onClick = vm::showAddRowSheet,
                     modifier = Modifier.fillMaxWidth().padding(16.dp),

@@ -228,7 +228,7 @@ fun TraktScreen(
             }
 
             ScrollableTabRow(selectedTabIndex = state.tab.ordinal, edgePadding = 0.dp) {
-                listOf("Continue Watching", "My Lists", "Liked Lists", "Watchlist", "Recent").forEachIndexed { i, label ->
+                listOf("Next Episodes", "My Lists", "Liked Lists", "Watchlist", "Recent", "Calendar").forEachIndexed { i, label ->
                     Tab(
                         selected = state.tab.ordinal == i,
                         onClick = { vm.selectTab(TraktTab.values()[i]) },
@@ -253,7 +253,7 @@ fun TraktScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 when (state.tab) {
-                    TraktTab.CONTINUE_WATCHING -> ContinueWatchingList(state.watchedShows, state.showProgressMap, state.continueWatchingPosters, vm::playNextEpisode, onShowClick)
+                    TraktTab.CONTINUE_WATCHING -> ContinueWatchingList(state.watchedShows, state.showProgressMap, state.continueWatchingPosters, vm::playNextEpisode, onShowClick, onEpisodeClick, vm::hideFromContinueWatching)
                     TraktTab.MY_LISTS -> TraktListList(
                         lists = state.myLists,
                         onListClick = { list -> vm.loadListItems(list.slug, list.name, "me") },
@@ -279,13 +279,55 @@ fun TraktScreen(
                         onEpisodePlay = vm::playRecentEpisode,
                         onEpisodeClick = onEpisodeClick,
                     )
+                    TraktTab.CALENDAR -> CalendarTab(state.calendar, onEpisodeClick)
                 }
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CalendarTab(
+    items: List<TraktCalendarEpisode>,
+    onEpisodeClick: (showId: Int, season: Int, episode: Int) -> Unit,
+) {
+    if (items.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Nothing airing soon", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    // Group upcoming episodes by air date (yyyy-MM-dd).
+    val byDate = items.groupBy { it.firstAired.take(10) }.toSortedMap()
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
+        byDate.forEach { (date, episodes) ->
+            item(key = "header_$date") {
+                Text(
+                    text = date,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
+            items(episodes) { entry ->
+                val tmdbId = entry.show.ids.tmdb
+                ListItem(
+                    headlineContent = { Text(entry.show.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    supportingContent = {
+                        Text("S${entry.episode.season}E${"%02d".format(entry.episode.number)} · ${entry.episode.title}")
+                    },
+                    modifier = Modifier.clickable(enabled = tmdbId != null) {
+                        if (tmdbId != null) onEpisodeClick(tmdbId, entry.episode.season, entry.episode.number)
+                    },
+                )
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ContinueWatchingList(
     shows: List<TraktWatchedShow>,
@@ -293,12 +335,26 @@ private fun ContinueWatchingList(
     posters: Map<Int, String?>,
     onPlay: (TraktWatchedShow) -> Unit,
     onShowClick: (Int) -> Unit,
+    onEpisodeClick: (showId: Int, season: Int, episode: Int) -> Unit,
+    onHide: (TraktWatchedShow) -> Unit,
 ) {
     if (shows.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("No shows in progress", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
+    }
+    var toHide by remember { mutableStateOf<TraktWatchedShow?>(null) }
+    toHide?.let { show ->
+        AlertDialog(
+            onDismissRequest = { toHide = null },
+            title = { Text("Hide from Next Episodes?") },
+            text = { Text("\"${show.show.title}\" won't appear in Next Episodes or Continue Watching. You can unhide it on Trakt.") },
+            confirmButton = {
+                TextButton(onClick = { onHide(show); toHide = null }) { Text("Hide") }
+            },
+            dismissButton = { TextButton(onClick = { toHide = null }) { Text("Cancel") } },
+        )
     }
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(8.dp)) {
         items(shows) { watched ->
@@ -317,10 +373,19 @@ private fun ContinueWatchingList(
             } ?: 0f
 
             Card(
-                onClick = { tmdbId?.let(onShowClick) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = 4.dp)
+                    .combinedClickable(
+                        onClick = {
+                            val id = tmdbId
+                            if (id != null) {
+                                if (nextEp != null) onEpisodeClick(id, nextEp.season, nextEp.number)
+                                else onShowClick(id)
+                            }
+                        },
+                        onLongClick = { toHide = watched },
+                    ),
                 shape = RoundedCornerShape(10.dp),
             ) {
                 Row(

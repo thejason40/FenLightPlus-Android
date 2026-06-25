@@ -33,6 +33,7 @@ fun AddBrowseRowSheet(
     watchProviders: List<WatchProvider>,
     availableTmdbLists: List<TmdbList> = emptyList(),
     availableTraktLists: List<TraktListEntry> = emptyList(),
+    hasTraktAuth: Boolean = false,
     onTypeChange: (RowType) -> Unit,
     onLabelChange: (String) -> Unit,
     onFiltersChange: (DiscoverFilters) -> Unit,
@@ -55,7 +56,10 @@ fun AddBrowseRowSheet(
 
             // Row type dropdown — show type options appropriate for the media type
             val typeOptions: List<Pair<String, String>> = buildList {
+                add(RowType.POPULAR.name to RowType.POPULAR.displayName())
+                add(RowType.TRENDING.name to RowType.TRENDING.displayName())
                 if (mediaType == "tv") {
+                    if (hasTraktAuth) add(RowType.NEXT_EPISODES.name to RowType.NEXT_EPISODES.displayName())
                     add(RowType.ON_THE_AIR.name to RowType.ON_THE_AIR.displayName())
                     add(RowType.AIRING_TODAY.name to RowType.AIRING_TODAY.displayName())
                 } else {

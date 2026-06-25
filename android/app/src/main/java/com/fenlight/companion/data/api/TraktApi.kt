@@ -79,6 +79,26 @@ interface TraktApi {
     @GET("shows/{id}/progress/watched")
     suspend fun showProgress(@Path("id") id: String, @Query("extended") extended: String = "full"): TraktShowProgress
 
+    // Watched history — mark items watched / unwatched
+    @POST("sync/history")
+    suspend fun addToHistory(@Body body: @JvmSuppressWildcards Map<String, Any>): Any
+
+    @POST("sync/history/remove")
+    suspend fun removeFromHistory(@Body body: @JvmSuppressWildcards Map<String, Any>): Any
+
+    // Hidden items — hide/unhide shows from progress (Continue Watching)
+    @GET("users/hidden/progress_watched")
+    suspend fun getHiddenProgress(
+        @Query("type") type: String = "show",
+        @Query("limit") limit: Int = 100,
+    ): Response<List<TraktHiddenItem>>
+
+    @POST("users/hidden/progress_watched")
+    suspend fun addHiddenProgress(@Body body: @JvmSuppressWildcards Map<String, Any>): Any
+
+    @POST("users/hidden/progress_watched/remove")
+    suspend fun removeHiddenProgress(@Body body: @JvmSuppressWildcards Map<String, Any>): Any
+
     @POST("users/me/lists")
     suspend fun createList(@Body body: @JvmSuppressWildcards Map<String, Any>): TraktList
 

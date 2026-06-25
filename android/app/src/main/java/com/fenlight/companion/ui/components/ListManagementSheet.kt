@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Movie
@@ -241,6 +243,22 @@ fun ListManagementSheet(
                         modifier = Modifier.clickable {
                             if (isWatchlisted) vm.removeFromTraktWatchlist(mediaId, mediaType)
                             else vm.addToTraktWatchlist(mediaId, mediaType)
+                            onDismiss()
+                        },
+                    )
+                    ListItem(
+                        headlineContent = { Text("Mark as watched") },
+                        leadingContent = { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                        modifier = Modifier.clickable {
+                            vm.markWatched(mediaId, mediaType)
+                            onDismiss()
+                        },
+                    )
+                    ListItem(
+                        headlineContent = { Text("Mark as unwatched") },
+                        leadingContent = { Icon(Icons.Default.Close, contentDescription = null) },
+                        modifier = Modifier.clickable {
+                            vm.markUnwatched(mediaId, mediaType)
                             onDismiss()
                         },
                     )

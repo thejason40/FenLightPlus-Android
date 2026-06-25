@@ -52,7 +52,7 @@ class MovieDetailViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun playMovie(movie: Movie) {
+    fun playMovie(movie: Movie, mode: KodiRpc.PlaybackMode = KodiRpc.PlaybackMode.DEFAULT) {
         viewModelScope.launch {
             try {
                 val host = app.prefs.kodiHost.first()
@@ -61,8 +61,9 @@ class MovieDetailViewModel(application: Application) : AndroidViewModel(applicat
                 val pass = app.prefs.kodiPass.first()
                 val kodi = KodiRpc(host, port, user, pass)
                 val year = movie.releaseDate?.take(4)?.toIntOrNull() ?: 0
-                kodi.playMovieViaFenLight(movie.id, movie.title, year)
-                _state.update { it.copy(playMessage = "Playing ${movie.title} on Kodi…") }
+                kodi.playMovieViaFenLight(movie.id, movie.title, year, mode)
+                val verb = if (mode == KodiRpc.PlaybackMode.DEFAULT) "Playing" else "Scraping"
+                _state.update { it.copy(playMessage = "$verb ${movie.title} on Kodi…") }
             } catch (e: Exception) {
                 _state.update { it.copy(playMessage = "Failed to send play command: ${e.message}") }
             }

@@ -5,8 +5,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.fenlight.companion.FenLightApp
 import com.fenlight.companion.ui.components.ErrorMessage
+import com.fenlight.companion.ui.components.PlaybackOptionsSheet
 import com.fenlight.companion.ui.components.rememberPlayMessageSnackbar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,6 +40,25 @@ fun EpisodeDetailScreen(
     LaunchedEffect(showId, season, episodeNumber) { vm.load(showId, season, episodeNumber) }
     val state by vm.state.collectAsStateWithLifecycle()
     val snackbarHostState = rememberPlayMessageSnackbar(state.playMessage) { vm.clearPlayMessage() }
+
+    var showCountDialog by remember { mutableStateOf(false) }
+    if (showCountDialog) {
+        PlayEpisodeCountDialog(
+            onDismiss = { showCountDialog = false },
+            onConfirm = { count ->
+                showCountDialog = false
+                vm.play(showId, count)
+            },
+        )
+    }
+
+    var showPlaybackOptions by remember { mutableStateOf(false) }
+    if (showPlaybackOptions) {
+        PlaybackOptionsSheet(
+            onSelect = { mode -> vm.play(showId, numEpisodes = 1, mode = mode) },
+            onDismiss = { showPlaybackOptions = false },
+        )
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -116,8 +140,22 @@ fun EpisodeDetailScreen(
                             )
                         }
                     }
-                    FilledIconButton(onClick = { vm.play(showId) }) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Play")
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FilledIconButton(onClick = { vm.play(showId) }) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Play")
+                        }
+                        FilledTonalIconButton(onClick = { showCountDialog = true }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.PlaylistPlay,
+                                contentDescription = "Play multiple episodes",
+                            )
+                        }
+                        FilledTonalIconButton(onClick = { showPlaybackOptions = true }) {
+                            Icon(Icons.Default.Tune, contentDescription = "Playback options")
+                        }
                     }
                 }
 
@@ -125,7 +163,70 @@ fun EpisodeDetailScreen(
                     Text("Overview", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Text(ep.overview, style = MaterialTheme.typography.bodyMedium)
                 }
+
+                if (state.traktAuthed) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { vm.markWatched(showId, watched = true) }) {
+                            Text("Mark watched")
+                        }
+                        TextButton(onClick = { vm.markWatched(showId, watched = false) }) {
+                            Text("Mark unwatched")
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+private const val MIN_EPISODE_COUNT = 2
+private const val MAX_EPISODE_COUNT = 50
+
+@Composable
+private fun PlayEpisodeCountDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit,
+) {
+    var count by remember { mutableStateOf(3) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Play multiple episodes") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "FenLight+ will play this many episodes back-to-back, starting from this one.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilledTonalIconButton(
+                        onClick = { if (count > MIN_EPISODE_COUNT) count-- },
+                        enabled = count > MIN_EPISODE_COUNT,
+                    ) {
+                        Icon(Icons.Default.Remove, contentDescription = "Fewer episodes")
+                    }
+                    Text(
+                        count.toString(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    FilledTonalIconButton(
+                        onClick = { if (count < MAX_EPISODE_COUNT) count++ },
+                        enabled = count < MAX_EPISODE_COUNT,
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "More episodes")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(count) }) { Text("Play $count") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

@@ -13,6 +13,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -85,6 +86,56 @@ fun MediaCard(
                 }
             }
         }
+    }
+}
+
+/** Landscape card for "Next Episodes" rows: episode still + show title + "S1E01 - Title". */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun NextEpisodeCard(
+    item: PaginatedItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+) {
+    val season = item.nextSeason ?: 0
+    val episode = item.nextEpisode ?: 0
+    val code = "S${season}E${"%02d".format(episode)}"
+    val subtitle = item.episodeTitle?.takeIf { it.isNotBlank() }?.let { "$code - $it" } ?: code
+
+    Column(
+        modifier = modifier
+            .width(230.dp)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+    ) {
+        Card(
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            AsyncImage(
+                model = item.backdropUrl ?: item.posterUrl,
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = item.title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

@@ -16,11 +16,15 @@ The companion app talks to your Kodi box over the local network and drives the F
 
 Main features:
 
-- **Movie and TV browsing** - customisable home rows (trending, popular, top rated, and more) powered by TMDB, with full detail pages, cast, recommendations, and similar titles.
+- **Movie and TV browsing** - customisable home rows (popular, trending, top rated, discover, your TMDB/Trakt lists, and more) powered by TMDB, with full detail pages, cast, recommendations, and similar titles.
 - **Search** across movies, TV shows, and people.
 - **Play to Kodi** - send any movie or episode to FenLight+ for playback with a single tap.
-- **Trakt integration** - sign in to surface your Continue Watching list and personal lists, with cached state for fast loading.
-- **TMDB account** - sign in via OAuth to access your personal TMDB lists and watchlists.
+- **Playback options** - choose how FenLight+ resolves a stream: autoplay the best match, or select a source / scrape with all sources / ignore quality filters (the source list opens on your Kodi device).
+- **Play multiple episodes** - binge several episodes back-to-back from an episode's detail page; FenLight+ handles the queue.
+- **Next Episodes** - your in-progress Trakt shows shown with episode artwork, jumping straight to the next unwatched episode. Available as its own Trakt tab and as an optional row on the TV Shows page.
+- **Mark watched & hide** - mark movies, shows, and episodes watched or unwatched, and hide finished shows from Next Episodes - all synced via Trakt.
+- **Trakt integration** - sign in for Next Episodes, your lists, liked lists, watchlist, watch history, and calendar, with cached state for fast loading.
+- **TMDB account** - sign in to access your personal TMDB lists and watchlists.
 - **Real-Debrid** - view and manage your Real-Debrid account.
 - **Automatic Kodi discovery** - scans your local network to find the Kodi instance automatically during setup.
 - **Light / dark / system theming** and configurable region and adult-content filtering.

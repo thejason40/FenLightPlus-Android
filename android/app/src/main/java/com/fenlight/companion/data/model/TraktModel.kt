@@ -103,6 +103,14 @@ data class TraktEpisode(
     @Json(name = "first_aired") val firstAired: String? = null,
 )
 
+// GET /users/hidden/progress_watched returns [{hidden_at, type, show:{...}}]
+@JsonClass(generateAdapter = true)
+data class TraktHiddenItem(
+    val type: String,
+    val show: TraktShow? = null,
+    val movie: TraktMovie? = null,
+)
+
 @JsonClass(generateAdapter = true)
 data class TraktLikedList(
     val list: TraktList,

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fenlight.companion.FenLightApp
 import com.fenlight.companion.data.model.*
+import com.fenlight.companion.data.trakt.ContinueWatchingStore
 import com.fenlight.companion.ui.components.PaginatedItem
 import com.squareup.moshi.Types
 import kotlinx.coroutines.*
@@ -36,6 +37,7 @@ data class MediaHomeUiState(
     val watchProviders: List<WatchProvider> = emptyList(),
     val availableTmdbLists: List<TmdbList> = emptyList(),
     val availableTraktLists: List<TraktListEntry> = emptyList(),
+    val hasTraktAuth: Boolean = false,
 )
 
 abstract class MediaHomeViewModel(
@@ -51,7 +53,7 @@ abstract class MediaHomeViewModel(
 
     private companion object {
         const val CACHE_MS = 24 * 60 * 60 * 1000L
-        const val MAX_CUSTOM_ROWS = 5
+        const val MAX_ROWS = 7
         const val FIXED_POPULAR = "fixed_popular"
         const val FIXED_TRENDING = "fixed_trending"
     }
@@ -59,12 +61,17 @@ abstract class MediaHomeViewModel(
     private data class CachedRow(val items: List<PaginatedItem>, val fetchedAt: Long)
     private val rowCache = mutableMapOf<String, CachedRow>()
 
+    private val cwStore by lazy { ContinueWatchingStore(app.prefs, app.moshi) }
+
     private val browseRowListType = Types.newParameterizedType(List::class.java, BrowseRowConfig::class.java)
     private val browseRowListAdapter = app.moshi.adapter<List<BrowseRowConfig>>(browseRowListType)
 
     init {
         loadGenres()
         loadRowConfigs()
+        viewModelScope.launch {
+            _state.update { it.copy(hasTraktAuth = app.prefs.traktAccessToken.first().isNotBlank()) }
+        }
     }
 
     private fun loadGenres() {
@@ -78,15 +85,28 @@ abstract class MediaHomeViewModel(
     private fun loadRowConfigs() {
         viewModelScope.launch {
             val json = catalog.browseRowsJson.first()
-            val customConfigs = if (json.isNotBlank()) {
+            val saved = if (json.isNotBlank()) {
                 runCatching { browseRowListAdapter.fromJson(json) ?: emptyList() }.getOrDefault(emptyList())
             } else emptyList()
 
-            val fixedRows = listOf(
-                BrowseRowConfig(FIXED_POPULAR, "Popular", RowType.POPULAR),
-                BrowseRowConfig(FIXED_TRENDING, "Trending", RowType.TRENDING),
-            )
-            val allConfigs = fixedRows + customConfigs
+            val allConfigs: List<BrowseRowConfig> = if (catalog.browseRowsMigrated.first()) {
+                // Saved list is the full source of truth — respect any deletions
+                // (including deleting the default Popular/Trending rows).
+                saved
+            } else {
+                // Fresh install or legacy save (which stored only custom rows): seed the
+                // two default rows in front of anything already saved, persist the full
+                // order, and mark as migrated so future deletions of them stick.
+                val defaults = listOf(
+                    BrowseRowConfig(FIXED_POPULAR, "Popular", RowType.POPULAR),
+                    BrowseRowConfig(FIXED_TRENDING, "Trending", RowType.TRENDING),
+                )
+                val savedIds = saved.map { it.id }.toSet()
+                val merged = defaults.filter { it.id !in savedIds } + saved
+                catalog.saveBrowseRowsMigrated(true)
+                catalog.saveBrowseRowsJson(browseRowListAdapter.toJson(merged))
+                merged
+            }
             _state.update {
                 it.copy(rows = allConfigs.map { c -> BrowseRowState(c, isLoading = true) })
             }
@@ -131,8 +151,38 @@ abstract class MediaHomeViewModel(
                 catalog.traktListPage(slug, config.traktUser ?: "me", 1, excludeAdult).items
             }
             RowType.TRENDING -> catalog.trendingPage(1, region, excludeAdult).items
+            RowType.NEXT_EPISODES -> nextEpisodeItems()
             else -> catalog.standardPage(config.type, config.filters, 1, region, excludeAdult).items
         }
+
+    /**
+     * In-progress Trakt shows as grid items, each carrying its next unwatched episode.
+     * Reuses the cached Continue Watching snapshot when warm; otherwise syncs once.
+     * The episode still + name are read from the (persisted) CW cache — populated by
+     * [ContinueWatchingStore.sync] — so this needs no per-episode TMDB calls when warm.
+     * Falls back to the show poster / Trakt episode title when a still isn't cached yet.
+     */
+    private suspend fun nextEpisodeItems(): List<PaginatedItem> {
+        val snapshot = cwStore.cachedSnapshot() ?: cwStore.sync(app.authedTraktApi, app.tmdbApi)
+        return snapshot.shows.mapNotNull { watched ->
+            val slug = watched.show.ids.slug ?: return@mapNotNull null
+            val tmdbId = watched.show.ids.tmdb ?: return@mapNotNull null
+            val nextEp = snapshot.progressBySlug[slug]?.nextEpisode ?: return@mapNotNull null
+            val posterUrl = snapshot.postersByTmdb[tmdbId]?.let { FenLightApp.posterUrl(it) }
+            val stillPath = snapshot.episodeStillsByTmdb[tmdbId]
+            PaginatedItem(
+                id = tmdbId,
+                title = watched.show.title,
+                posterUrl = posterUrl,
+                rating = null,
+                // Prefer the cached episode still; fall back to the show poster.
+                backdropUrl = stillPath?.let { FenLightApp.backdropUrl(it) } ?: posterUrl,
+                nextSeason = nextEp.season,
+                nextEpisode = nextEp.number,
+                episodeTitle = snapshot.episodeNamesByTmdb[tmdbId]?.takeIf { it.isNotBlank() } ?: nextEp.title,
+            )
+        }
+    }
 
     private fun updateRow(rowId: String, transform: (BrowseRowState) -> BrowseRowState) {
         _state.update { s -> s.copy(rows = s.rows.map { r -> if (r.config.id == rowId) transform(r) else r }) }
@@ -201,9 +251,8 @@ abstract class MediaHomeViewModel(
     fun onPendingTraktListChange(slug: String?, user: String?) = _state.update { it.copy(pendingTraktSlug = slug, pendingTraktUser = user) }
 
     fun addCustomRow() {
-        val customRows = _state.value.rows.filter { it.config.id !in listOf(FIXED_POPULAR, FIXED_TRENDING) }
-        if (customRows.size >= MAX_CUSTOM_ROWS) {
-            _state.update { it.copy(addRowError = "Maximum $MAX_CUSTOM_ROWS custom rows reached") }
+        if (_state.value.rows.size >= MAX_ROWS) {
+            _state.update { it.copy(addRowError = "Maximum $MAX_ROWS rows reached") }
             return
         }
         val s = _state.value
@@ -234,23 +283,38 @@ abstract class MediaHomeViewModel(
         }
         val updatedRows = _state.value.rows + BrowseRowState(config = newConfig, isLoading = true)
         _state.update { it.copy(rows = updatedRows, showAddRowSheet = false) }
-        persistCustomRows(updatedRows)
+        persistRows()
         fetchAllRows(listOf(newConfig))
     }
 
     fun removeRow(rowId: String) {
-        if (rowId in listOf(FIXED_POPULAR, FIXED_TRENDING)) return
         rowCache.remove(rowId)
         val updatedRows = _state.value.rows.filter { it.config.id != rowId }
         _state.update { it.copy(rows = updatedRows) }
-        persistCustomRows(updatedRows)
+        persistRows()
     }
 
-    private fun persistCustomRows(rows: List<BrowseRowState>) {
-        val customConfigs = rows.filter { it.config.id !in listOf(FIXED_POPULAR, FIXED_TRENDING) }.map { it.config }
+    /**
+     * Reorders rows live during a drag (no persistence). Call [persistRows] when the
+     * drag settles. Both [fromId] and [toId] are row config ids; unknown ids are no-ops
+     * (e.g. when dragged onto the trailing "Add Row" button).
+     */
+    fun moveRow(fromId: String, toId: String) {
+        _state.update { s ->
+            val list = s.rows.toMutableList()
+            val fromIdx = list.indexOfFirst { it.config.id == fromId }
+            val toIdx = list.indexOfFirst { it.config.id == toId }
+            if (fromIdx < 0 || toIdx < 0) return@update s
+            list.add(toIdx, list.removeAt(fromIdx))
+            s.copy(rows = list)
+        }
+    }
+
+    /** Persists the full current row order (fixed + custom rows). */
+    fun persistRows() {
+        val configs = _state.value.rows.map { it.config }
         viewModelScope.launch {
-            val json = browseRowListAdapter.toJson(customConfigs)
-            catalog.saveBrowseRowsJson(json)
+            catalog.saveBrowseRowsJson(browseRowListAdapter.toJson(configs))
         }
     }
 
@@ -271,4 +335,5 @@ fun RowType.displayName() = when (this) {
     RowType.TOP_RATED -> "Top Rated"; RowType.ON_THE_AIR -> "On the Air"
     RowType.AIRING_TODAY -> "Airing Today"; RowType.CUSTOM -> "Custom"
     RowType.TMDB_LIST -> "TMDB List"; RowType.TRAKT_LIST -> "Trakt List"
+    RowType.NEXT_EPISODES -> "Next Episodes"
 }

@@ -224,6 +224,9 @@ fun HomeScreen(
                     onShowSimilar = { id -> navController.navigate("related/tv/$id/similar") },
                     onSeeAll = { config -> navController.navigate("tv_browse_all/${config.toNavArg()}") },
                     onOpenPublicList = onOpenPublicList,
+                    onEpisodeClick = { showId, season, episode ->
+                        navController.navigate("episode_detail/$showId/$season/$episode")
+                    },
                     vm = viewModel<TvViewModel>(),
                 )
             }

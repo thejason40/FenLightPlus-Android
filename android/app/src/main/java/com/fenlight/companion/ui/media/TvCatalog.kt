@@ -18,6 +18,8 @@ class TvCatalog(app: FenLightApp) : MediaCatalog(app) {
 
     override val browseRowsJson: Flow<String> get() = app.prefs.tvBrowseRowsJson
     override suspend fun saveBrowseRowsJson(json: String) = app.prefs.saveTvBrowseRows(json)
+    override val browseRowsMigrated: Flow<Boolean> get() = app.prefs.tvBrowseRowsMigrated
+    override suspend fun saveBrowseRowsMigrated(value: Boolean) = app.prefs.saveTvBrowseRowsMigrated(value)
 
     override suspend fun genres(): List<Genre> = app.tmdbApi.tvGenres().genres
 

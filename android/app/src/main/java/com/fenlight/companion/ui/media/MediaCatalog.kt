@@ -33,6 +33,9 @@ abstract class MediaCatalog(protected val app: FenLightApp) {
 
     abstract val browseRowsJson: Flow<String>
     abstract suspend fun saveBrowseRowsJson(json: String)
+    /** Whether the saved row list already represents the full order (incl. default rows). */
+    abstract val browseRowsMigrated: Flow<Boolean>
+    abstract suspend fun saveBrowseRowsMigrated(value: Boolean)
     abstract suspend fun genres(): List<Genre>
     abstract suspend fun watchProviders(region: String?): List<WatchProvider>
 

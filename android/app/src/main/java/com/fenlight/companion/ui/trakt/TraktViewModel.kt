@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fenlight.companion.FenLightApp
 import com.fenlight.companion.data.api.KodiRpc
+import com.fenlight.companion.data.model.TraktCalendarEpisode
 import com.fenlight.companion.data.model.TraktHistoryEntry
 import com.fenlight.companion.data.model.TraktList
 import com.fenlight.companion.data.model.TraktListItem
@@ -18,8 +19,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
-enum class TraktTab { CONTINUE_WATCHING, MY_LISTS, LIKED_LISTS, WATCHLIST, RECENT }
+enum class TraktTab { CONTINUE_WATCHING, MY_LISTS, LIKED_LISTS, WATCHLIST, RECENT, CALENDAR }
 
 data class TraktUiState(
     val tab: TraktTab = TraktTab.CONTINUE_WATCHING,
@@ -43,6 +45,7 @@ data class TraktUiState(
     val watchlistMovies: List<TraktListItem> = emptyList(),
     val watchlistShows: List<TraktListItem> = emptyList(),
     val recentHistory: List<TraktHistoryEntry> = emptyList(),
+    val calendar: List<TraktCalendarEpisode> = emptyList(),
     val recentHistoryPage: Int = 0,
     val recentHistoryHasMore: Boolean = false,
     val recentHistoryIsLoadingMore: Boolean = false,
@@ -106,6 +109,7 @@ class TraktViewModel(application: Application) : AndroidViewModel(application) {
             TraktTab.LIKED_LISTS -> _state.value.likedLists.isNotEmpty()
             TraktTab.WATCHLIST -> _state.value.watchlistMovies.isNotEmpty() || _state.value.watchlistShows.isNotEmpty()
             TraktTab.RECENT -> _state.value.recentHistory.isNotEmpty()
+            TraktTab.CALENDAR -> _state.value.calendar.isNotEmpty()
         }
         if (!force && hasData && age < CACHE_MS) return
         when (tab) {
@@ -114,6 +118,20 @@ class TraktViewModel(application: Application) : AndroidViewModel(application) {
             TraktTab.LIKED_LISTS -> loadLikedLists()
             TraktTab.WATCHLIST -> loadWatchlist()
             TraktTab.RECENT -> loadRecent()
+            TraktTab.CALENDAR -> loadCalendar()
+        }
+    }
+
+    private fun loadCalendar() {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            try {
+                val items = app.authedTraktApi.myCalendar(LocalDate.now().toString(), days = 14)
+                tabFetchedAt[TraktTab.CALENDAR] = System.currentTimeMillis()
+                _state.update { it.copy(isLoading = false, isRefreshing = false, calendar = items) }
+            } catch (e: Exception) {
+                _state.update { it.copy(isLoading = false, isRefreshing = false, error = e.message) }
+            }
         }
     }
 
@@ -349,6 +367,29 @@ class TraktViewModel(application: Application) : AndroidViewModel(application) {
             listItemPage = 0,
             listItemHasMore = false,
         )
+    }
+
+    fun hideFromContinueWatching(watched: TraktWatchedShow) {
+        viewModelScope.launch {
+            val tmdb = watched.show.ids.tmdb ?: return@launch
+            try {
+                app.authedTraktApi.addHiddenProgress(
+                    mapOf("shows" to listOf(mapOf("ids" to mapOf("tmdb" to tmdb)))),
+                )
+                // Drop it from the visible list now and invalidate the cache so the
+                // Next Episodes row/tab don't bring it back until the next sync.
+                app.prefs.saveTraktCwCache("")
+                val slug = watched.show.ids.slug
+                _state.update { s ->
+                    s.copy(
+                        watchedShows = s.watchedShows.filterNot { it.show.ids.slug == slug },
+                        playMessage = "Hidden \"${watched.show.title}\" from Next Episodes",
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(playMessage = "Failed: ${e.message}") }
+            }
+        }
     }
 
     fun playNextEpisode(watched: TraktWatchedShow) {

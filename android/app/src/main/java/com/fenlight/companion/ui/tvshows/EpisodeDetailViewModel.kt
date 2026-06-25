@@ -16,6 +16,7 @@ data class EpisodeDetailUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val playMessage: String? = null,
+    val traktAuthed: Boolean = false,
 )
 
 class EpisodeDetailViewModel(application: Application) : AndroidViewModel(application) {
@@ -31,7 +32,7 @@ class EpisodeDetailViewModel(application: Application) : AndroidViewModel(applic
         if (loadedKey == key && _state.value.episode != null) return
         loadedKey = key
         viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
+            _state.update { it.copy(isLoading = true, error = null, traktAuthed = app.prefs.traktAccessToken.first().isNotBlank()) }
             try {
                 coroutineScope {
                     val epDeferred = async { app.tmdbApi.episodeDetail(showId, season, episodeNumber) }
@@ -53,7 +54,7 @@ class EpisodeDetailViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun play(showId: Int) {
+    fun play(showId: Int, numEpisodes: Int = 1, mode: KodiRpc.PlaybackMode = KodiRpc.PlaybackMode.DEFAULT) {
         val s = _state.value
         val ep = s.episode ?: return
         viewModelScope.launch {
@@ -63,8 +64,44 @@ class EpisodeDetailViewModel(application: Application) : AndroidViewModel(applic
                 val user = app.prefs.kodiUser.first()
                 val pass = app.prefs.kodiPass.first()
                 KodiRpc(host, port, user, pass)
-                    .playEpisodeViaFenLight(showId, s.showName, s.showYear, ep.seasonNumber, ep.episodeNumber)
-                _state.update { it.copy(playMessage = "Playing S${ep.seasonNumber}E${ep.episodeNumber} of ${s.showName} on Kodi…") }
+                    .playEpisodeViaFenLight(
+                        showId, s.showName, s.showYear, ep.seasonNumber, ep.episodeNumber, numEpisodes, mode,
+                    )
+                val message = if (numEpisodes > 1) {
+                    "Playing $numEpisodes episodes from S${ep.seasonNumber}E${ep.episodeNumber} of ${s.showName} on Kodi…"
+                } else {
+                    "Playing S${ep.seasonNumber}E${ep.episodeNumber} of ${s.showName} on Kodi…"
+                }
+                _state.update { it.copy(playMessage = message) }
+            } catch (e: Exception) {
+                _state.update { it.copy(playMessage = "Failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun markWatched(showId: Int, watched: Boolean) {
+        val ep = _state.value.episode ?: return
+        viewModelScope.launch {
+            try {
+                val body = mapOf(
+                    "shows" to listOf(
+                        mapOf(
+                            "ids" to mapOf("tmdb" to showId),
+                            "seasons" to listOf(
+                                mapOf(
+                                    "number" to ep.seasonNumber,
+                                    "episodes" to listOf(mapOf("number" to ep.episodeNumber)),
+                                ),
+                            ),
+                        ),
+                    ),
+                )
+                if (watched) app.authedTraktApi.addToHistory(body) else app.authedTraktApi.removeFromHistory(body)
+                // Watched changes affect Continue Watching; drop the cache so it re-syncs.
+                app.prefs.saveTraktCwCache("")
+                _state.update {
+                    it.copy(playMessage = if (watched) "Marked S${ep.seasonNumber}E${ep.episodeNumber} watched" else "Marked S${ep.seasonNumber}E${ep.episodeNumber} unwatched")
+                }
             } catch (e: Exception) {
                 _state.update { it.copy(playMessage = "Failed: ${e.message}") }
             }

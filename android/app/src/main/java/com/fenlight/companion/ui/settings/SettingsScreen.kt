@@ -224,7 +224,7 @@ fun SettingsScreen(
                     subtitle = if (setupState.traktAuthed)
                         setupState.traktUsername.ifBlank { "Connected" }
                     else
-                        "Continue Watching and personal lists",
+                        "Next Episodes and personal lists",
                 )
                 when {
                     setupState.traktAuthed -> {

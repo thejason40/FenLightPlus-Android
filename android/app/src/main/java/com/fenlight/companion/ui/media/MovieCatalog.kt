@@ -18,6 +18,8 @@ class MovieCatalog(app: FenLightApp) : MediaCatalog(app) {
 
     override val browseRowsJson: Flow<String> get() = app.prefs.movieBrowseRowsJson
     override suspend fun saveBrowseRowsJson(json: String) = app.prefs.saveMovieBrowseRows(json)
+    override val browseRowsMigrated: Flow<Boolean> get() = app.prefs.movieBrowseRowsMigrated
+    override suspend fun saveBrowseRowsMigrated(value: Boolean) = app.prefs.saveMovieBrowseRowsMigrated(value)
 
     override suspend fun genres(): List<Genre> = app.tmdbApi.movieGenres().genres
 

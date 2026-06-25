@@ -20,6 +20,8 @@ class ContinueWatchingStore(private val prefs: AppPreferences, private val moshi
         val shows: List<TraktWatchedShow>,
         val progressBySlug: Map<String, TraktShowProgress>,
         val postersByTmdb: Map<Int, String?>,
+        val episodeStillsByTmdb: Map<Int, String?> = emptyMap(),
+        val episodeNamesByTmdb: Map<Int, String?> = emptyMap(),
     )
 
     private val adapter by lazy { moshi.adapter(CwCache::class.java) }
@@ -41,7 +43,13 @@ class ContinueWatchingStore(private val prefs: AppPreferences, private val moshi
 
     suspend fun sync(api: TraktApi, tmdbApi: TmdbApi): Snapshot {
         val allWatched = api.watchedShows()
-        val watchedBySlug = allWatched.associateBy { it.show.ids.slug ?: "" }.filterKeys { it.isNotEmpty() }
+        // Exclude shows the user has hidden from progress on Trakt.
+        val hiddenSlugs = runCatching { api.getHiddenProgress().body() ?: emptyList() }
+            .getOrDefault(emptyList())
+            .mapNotNull { it.show?.ids?.slug }
+            .toSet()
+        val watchedBySlug = allWatched.associateBy { it.show.ids.slug ?: "" }
+            .filterKeys { it.isNotEmpty() && it !in hiddenSlugs }
 
         val cache = readCache()
         val cacheBySlug = cache.entries.associateBy { it.slug }
@@ -76,13 +84,21 @@ class ContinueWatchingStore(private val prefs: AppPreferences, private val moshi
                         val watched = watchedBySlug[slug] ?: return@async
                         runCatching {
                             val progress = api.showProgress(slug)
+                            val old = cacheBySlug[slug]
+                            // Carry over the cached episode still/name only when the next
+                            // episode is unchanged; otherwise drop it so it's re-fetched below.
+                            val sameNextEp = old?.progress?.nextEpisode?.let { o ->
+                                progress.nextEpisode?.let { n -> o.season == n.season && o.number == n.number }
+                            } ?: false
                             fetched[slug] = CwCacheEntry(
                                 slug = slug,
                                 lastWatchedAt = watched.lastWatchedAt,
                                 show = watched.show,
                                 plays = watched.plays,
                                 progress = progress,
-                                posterPath = cacheBySlug[slug]?.posterPath,
+                                posterPath = old?.posterPath,
+                                episodeStillPath = if (sameNextEp) old?.episodeStillPath else null,
+                                episodeName = if (sameNextEp) old?.episodeName else null,
                                 fetchedAt = now,
                             )
                         }.onFailure {
@@ -112,8 +128,31 @@ class ContinueWatchingStore(private val prefs: AppPreferences, private val moshi
             }.awaitAll()
         }
 
+        // Fetch the next-episode still + name for entries missing it (persisted so the
+        // "Next Episodes" row needs no per-episode TMDB calls on a warm cache).
+        val needsEpisodeMeta = filtered.filter {
+            it.progress.nextEpisode != null && it.episodeStillPath == null && it.show.ids.tmdb != null
+        }
+        val episodeMetaUpdates = mutableMapOf<String, Pair<String?, String?>>()
+        coroutineScope {
+            needsEpisodeMeta.map { entry ->
+                async {
+                    val nextEp = entry.progress.nextEpisode!!
+                    runCatching {
+                        val ep = tmdbApi.episodeDetail(entry.show.ids.tmdb!!, nextEp.season, nextEp.number)
+                        episodeMetaUpdates[entry.slug] = ep.stillPath to ep.name
+                    }
+                }
+            }.awaitAll()
+        }
+
         val finalEntries = merged.values.map { entry ->
-            if (entry.slug in posterUpdates) entry.copy(posterPath = posterUpdates[entry.slug]) else entry
+            var updated = entry
+            if (entry.slug in posterUpdates) updated = updated.copy(posterPath = posterUpdates[entry.slug])
+            episodeMetaUpdates[entry.slug]?.let { (still, name) ->
+                updated = updated.copy(episodeStillPath = still, episodeName = name)
+            }
+            updated
         }
 
         val newCache = CwCache(version = 1, entries = finalEntries)
@@ -147,7 +186,19 @@ class ContinueWatchingStore(private val prefs: AppPreferences, private val moshi
         val postersByTmdb = inProgress
             .mapNotNull { entry -> entry.show.ids.tmdb?.let { tmdb -> tmdb to entry.posterPath } }
             .toMap()
+        val episodeStillsByTmdb = inProgress
+            .mapNotNull { entry -> entry.show.ids.tmdb?.let { tmdb -> tmdb to entry.episodeStillPath } }
+            .toMap()
+        val episodeNamesByTmdb = inProgress
+            .mapNotNull { entry -> entry.show.ids.tmdb?.let { tmdb -> tmdb to entry.episodeName } }
+            .toMap()
 
-        return Snapshot(shows = shows, progressBySlug = progressBySlug, postersByTmdb = postersByTmdb)
+        return Snapshot(
+            shows = shows,
+            progressBySlug = progressBySlug,
+            postersByTmdb = postersByTmdb,
+            episodeStillsByTmdb = episodeStillsByTmdb,
+            episodeNamesByTmdb = episodeNamesByTmdb,
+        )
     }
 }

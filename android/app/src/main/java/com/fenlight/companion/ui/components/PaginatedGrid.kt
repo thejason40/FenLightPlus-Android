@@ -24,6 +24,10 @@ data class PaginatedItem(
     val posterUrl: String?,
     val rating: Double?,
     val backdropUrl: String? = null,
+    // Set only for "Next Episodes" rows: the next unwatched episode to open/play.
+    val nextSeason: Int? = null,
+    val nextEpisode: Int? = null,
+    val episodeTitle: String? = null,
 )
 
 @OptIn(ExperimentalFoundationApi::class)

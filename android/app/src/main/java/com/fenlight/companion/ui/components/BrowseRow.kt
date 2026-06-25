@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.fenlight.companion.data.model.RowType
 import com.fenlight.companion.ui.media.BrowseRowState
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -24,6 +25,8 @@ fun BrowseRow(
     onRemove: (() -> Unit)?,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    dragHandle: (@Composable () -> Unit)? = null,
+    showSeeAll: Boolean = true,
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -33,18 +36,20 @@ fun BrowseRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    onClick = onSeeAll,
+                    onClick = { if (showSeeAll) onSeeAll() else showMenu = true },
                     onLongClick = { showMenu = true },
                 )
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            dragHandle?.invoke()
             Text(
                 text = state.config.label,
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
-            Icon(Icons.Default.ChevronRight, contentDescription = "See all")
+            if (showSeeAll) Icon(Icons.Default.ChevronRight, contentDescription = "See all")
         }
 
         if (showMenu) {
@@ -53,13 +58,19 @@ fun BrowseRow(
                 title = { Text(state.config.label) },
                 text = null,
                 confirmButton = {
-                    TextButton(onClick = { showMenu = false; onSeeAll() }) { Text("See all") }
+                    if (showSeeAll) {
+                        TextButton(onClick = { showMenu = false; onSeeAll() }) { Text("See all") }
+                    } else {
+                        TextButton(onClick = { showMenu = false }) { Text("Close") }
+                    }
                 },
                 dismissButton = if (onRemove != null) {
                     { TextButton(onClick = { showMenu = false; onRemove() }) { Text("Remove", color = MaterialTheme.colorScheme.error) } }
                 } else null,
             )
         }
+
+        val isNextEpisodes = state.config.type == RowType.NEXT_EPISODES
 
         when {
             state.isLoading && state.items.isEmpty() -> {
@@ -70,7 +81,10 @@ fun BrowseRow(
                     items(5) {
                         Box(
                             modifier = Modifier
-                                .width(130.dp).height(195.dp)
+                                .then(
+                                    if (isNextEpisodes) Modifier.width(230.dp).height(129.dp)
+                                    else Modifier.width(130.dp).height(195.dp)
+                                )
                                 .padding(bottom = 4.dp),
                         ) {
                             Surface(
@@ -89,19 +103,35 @@ fun BrowseRow(
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
+            isNextEpisodes && state.items.isEmpty() -> {
+                Text(
+                    "Nothing in progress",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
             else -> {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(state.items, key = { it.id }) { item ->
-                        MediaCard(
-                            title = item.title,
-                            posterUrl = item.posterUrl,
-                            rating = item.rating,
-                            onClick = { onItemClick(item) },
-                            onLongClick = { onItemLongClick(item) },
-                        )
+                        if (isNextEpisodes) {
+                            NextEpisodeCard(
+                                item = item,
+                                onClick = { onItemClick(item) },
+                                onLongClick = { onItemLongClick(item) },
+                            )
+                        } else {
+                            MediaCard(
+                                title = item.title,
+                                posterUrl = item.posterUrl,
+                                rating = item.rating,
+                                onClick = { onItemClick(item) },
+                                onLongClick = { onItemLongClick(item) },
+                            )
+                        }
                     }
                 }
             }
