@@ -19,8 +19,8 @@ android {
         applicationId = "com.fenlight.companion"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.1"
         buildConfigField("String", "TMDB_READ_ACCESS_TOKEN", "\"${props["TMDB_READ_ACCESS_TOKEN"]}\"")
         buildConfigField("String", "TRAKT_CLIENT_ID", "\"${props["TRAKT_CLIENT_ID"]}\"")
         buildConfigField("String", "TRAKT_CLIENT_SECRET", "\"${props["TRAKT_CLIENT_SECRET"]}\"")

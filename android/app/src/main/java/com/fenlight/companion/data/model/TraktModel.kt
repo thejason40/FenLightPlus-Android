@@ -117,6 +117,13 @@ data class TraktLikedList(
     @Json(name = "liked_at") val likedAt: String,
 )
 
+@JsonClass(generateAdapter = true)
+data class TraktWatchedMovie(
+    val plays: Int = 0,
+    @Json(name = "last_watched_at") val lastWatchedAt: String? = null,
+    val movie: TraktMovie,
+)
+
 // Continue Watching models
 @JsonClass(generateAdapter = true)
 data class TraktWatchedShow(
@@ -140,6 +147,26 @@ data class TraktProgressEpisode(
     val number: Int,
     val title: String? = null,
     @Json(name = "first_aired") val firstAired: String? = null,
+)
+
+// Per-episode progress (separate from TraktShowProgress to keep the CW cache lean).
+@JsonClass(generateAdapter = true)
+data class TraktShowProgressFull(
+    val aired: Int = 0,
+    val completed: Int = 0,
+    val seasons: List<TraktSeasonProgress> = emptyList(),
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktSeasonProgress(
+    val number: Int,
+    val episodes: List<TraktEpisodeProgressEntry> = emptyList(),
+)
+
+@JsonClass(generateAdapter = true)
+data class TraktEpisodeProgressEntry(
+    val number: Int,
+    val completed: Boolean = false,
 )
 
 @JsonClass(generateAdapter = true)

@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.fenlight.companion.FenLightApp
+import com.fenlight.companion.data.model.TraktCalendarEpisode
 import com.fenlight.companion.data.model.TraktHistoryEntry
 import com.fenlight.companion.data.model.TraktList
 import com.fenlight.companion.data.model.TraktListItem
@@ -268,7 +269,7 @@ fun TraktScreen(
                         onListLongClick = { list -> vm.confirmUnlikeList(list) },
                         showOwner = true,
                     )
-                    TraktTab.WATCHLIST -> WatchlistTab(state.watchlistMovies, state.watchlistShows, vm::playListMovie, onMovieClick, onShowClick)
+                    TraktTab.WATCHLIST -> WatchlistTab(state.watchlistMovies, state.watchlistShows, state.watchlistMovieRatings, state.watchlistShowRatings, vm::playListMovie, onMovieClick, onShowClick)
                     TraktTab.RECENT -> RecentTab(
                         history = state.recentHistory,
                         hasMore = state.recentHistoryHasMore,
@@ -597,6 +598,8 @@ private fun ListSearchView(
 private fun WatchlistTab(
     movies: List<TraktListItem>,
     shows: List<TraktListItem>,
+    movieRatings: Map<Int, Double>,
+    showRatings: Map<Int, Double>,
     onPlayMovie: (TraktListItem) -> Unit,
     onMovieClick: (Int) -> Unit,
     onShowClick: (Int) -> Unit,
@@ -621,7 +624,14 @@ private fun WatchlistTab(
                 val movie = item.movie ?: return@items
                 ListItem(
                     headlineContent = { Text(movie.title) },
-                    supportingContent = { movie.year?.let { Text(it.toString()) } },
+                    supportingContent = {
+                        val rating = movie.ids.tmdb?.let { movieRatings[it] }
+                        val text = listOfNotNull(
+                            movie.year?.toString(),
+                            rating?.let { "★ %.1f".format(it) },
+                        ).joinToString(" · ")
+                        if (text.isNotEmpty()) Text(text)
+                    },
                     trailingContent = {
                         if (movie.ids.tmdb != null) {
                             IconButton(onClick = { onPlayMovie(item) }) {
@@ -647,7 +657,14 @@ private fun WatchlistTab(
                 val show = item.show ?: return@items
                 ListItem(
                     headlineContent = { Text(show.title) },
-                    supportingContent = { show.year?.let { Text(it.toString()) } },
+                    supportingContent = {
+                        val rating = show.ids.tmdb?.let { showRatings[it] }
+                        val text = listOfNotNull(
+                            show.year?.toString(),
+                            rating?.let { "★ %.1f".format(it) },
+                        ).joinToString(" · ")
+                        if (text.isNotEmpty()) Text(text)
+                    },
                     modifier = show.ids.tmdb?.let { id -> Modifier.clickable { onShowClick(id) } } ?: Modifier,
                 )
                 HorizontalDivider()

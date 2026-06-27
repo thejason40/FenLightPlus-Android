@@ -158,7 +158,7 @@ fun TmdbListsScreen(
                         id = item.id,
                         title = item.title ?: item.name ?: "Unknown",
                         posterUrl = FenLightApp.posterUrl(item.posterPath),
-                        rating = null,
+                        rating = item.voteAverage.takeIf { it > 0 },
                         backdropUrl = null,
                     )
                 }

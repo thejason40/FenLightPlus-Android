@@ -115,10 +115,8 @@ fun PaginatedGrid(
                     )
                     // Rating at bottom-end
                     if (featured.rating != null && featured.rating > 0) {
-                        Text(
-                            text = "★ ${"%.1f".format(featured.rating)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                        RatingBadge(
+                            rating = featured.rating,
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
                                 .padding(12.dp),
@@ -130,10 +128,15 @@ fun PaginatedGrid(
 
         // Remaining items in the standard grid
         items(items.drop(1), key = { it.id }, contentType = { "card" }) { item ->
+            val watched = LocalWatchedState.current
+            if (watched.needsProgress(item.id)) {
+                LaunchedEffect(item.id) { watched.requestProgress(item.id) }
+            }
             MediaCard(
                 title = item.title,
                 posterUrl = item.posterUrl,
                 rating = item.rating,
+                watchedProgress = watched.progressFor(item.id),
                 onClick = { onItemClick(item) },
                 onLongClick = onItemLongClick?.let { { it(item) } },
             )

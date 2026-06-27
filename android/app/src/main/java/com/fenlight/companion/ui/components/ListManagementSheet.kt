@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.fenlight.companion.data.model.MediaType
 import com.fenlight.companion.data.model.TraktList
 import com.fenlight.companion.ui.lists.ListManagementViewModel
 
@@ -53,6 +54,8 @@ fun ListManagementSheet(
     vm: ListManagementViewModel = viewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    // Resolve this title's watched fraction on demand so the toggle is accurate for shows.
+    LaunchedEffect(mediaId, mediaType) { vm.ensureWatchedProgress(mediaId, mediaType) }
     var showListManagement by remember { mutableStateOf(false) }
     var showTraktListPicker by remember { mutableStateOf(false) }
     var showTmdbListPicker by remember { mutableStateOf(false) }
@@ -246,22 +249,6 @@ fun ListManagementSheet(
                             onDismiss()
                         },
                     )
-                    ListItem(
-                        headlineContent = { Text("Mark as watched") },
-                        leadingContent = { Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                        modifier = Modifier.clickable {
-                            vm.markWatched(mediaId, mediaType)
-                            onDismiss()
-                        },
-                    )
-                    ListItem(
-                        headlineContent = { Text("Mark as unwatched") },
-                        leadingContent = { Icon(Icons.Default.Close, contentDescription = null) },
-                        modifier = Modifier.clickable {
-                            vm.markUnwatched(mediaId, mediaType)
-                            onDismiss()
-                        },
-                    )
                     if (currentTraktListSlug != null) {
                         ListItem(
                             headlineContent = { Text("Remove from ${currentTraktListName ?: "list"}") },
@@ -335,6 +322,29 @@ fun ListManagementSheet(
                 },
             )
             HorizontalDivider()
+
+            // Mark watched / unwatched — its own top-level option (Trakt only)
+            if (state.hasTraktAuth) {
+                val isWatched = if (MediaType.from(mediaType) == MediaType.MOVIE) {
+                    mediaId in state.watchedMovieIds
+                } else {
+                    (state.watchedShowProgress[mediaId] ?: 0f) >= 1f
+                }
+                ListItem(
+                    headlineContent = { Text(if (isWatched) "Mark as unwatched" else "Mark as watched") },
+                    leadingContent = {
+                        Icon(
+                            if (isWatched) Icons.Default.Close else Icons.Default.Check,
+                            contentDescription = null,
+                            tint = if (isWatched) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        if (isWatched) vm.markUnwatched(mediaId, mediaType) else vm.markWatched(mediaId, mediaType)
+                        onDismiss()
+                    },
+                )
+            }
 
             // List Management — only when at least one list service is authenticated
             if (state.hasTraktAuth || state.hasTmdbAuth) {

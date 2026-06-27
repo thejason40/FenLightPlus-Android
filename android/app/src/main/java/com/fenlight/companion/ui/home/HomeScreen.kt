@@ -13,8 +13,13 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -22,7 +27,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fenlight.companion.FenLightApp
 import com.fenlight.companion.R
+import com.fenlight.companion.ui.components.LocalWatchedState
+import com.fenlight.companion.ui.components.WatchedLookup
+import com.fenlight.companion.ui.nowplaying.NowPlayingBar
+import com.fenlight.companion.ui.nowplaying.NowPlayingScreen
+import com.fenlight.companion.ui.nowplaying.NowPlayingViewModel
 import com.fenlight.companion.data.model.BrowseRowConfig
 import com.fenlight.companion.data.model.MediaType
 import com.fenlight.companion.data.model.TraktList
@@ -79,6 +90,33 @@ fun HomeScreen(
     onGoToSettings: () -> Unit,
 ) {
     val navController = rememberNavController()
+
+    // Now-playing remote: shared state + a foreground-only 1s poll loop.
+    val nowPlayingVm: NowPlayingViewModel = viewModel()
+    val app = LocalContext.current.applicationContext as FenLightApp
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(Unit) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            app.nowPlaying.poll()
+        }
+    }
+
+    // Watched state for poster ticks + the watched toggle.
+    // Load the persisted snapshot first (instant), then refresh from Trakt in the background.
+    LaunchedEffect(hasTraktAuth) {
+        app.watchedState.loadCache()
+        if (hasTraktAuth) app.watchedState.refresh()
+    }
+    val watchedState by app.watchedState.state.collectAsStateWithLifecycle()
+    val watchedLookup = remember(watchedState) {
+        WatchedLookup(
+            movieIds = watchedState.movieIds,
+            showIds = watchedState.showIds,
+            showProgress = watchedState.showProgress,
+            requestProgress = app.watchedState::requestShowProgress,
+        )
+    }
+
     val topDests = buildList {
         add(TopDest.Movies)
         add(TopDest.TV)
@@ -135,9 +173,16 @@ fun HomeScreen(
             }
         },
         bottomBar = {
-            NavigationBar {
-                val currentDest = navBackStackEntry?.destination
-                topDests.forEach { dest ->
+            Column {
+                if (currentRoute != "now_playing") {
+                    NowPlayingBar(
+                        vm = nowPlayingVm,
+                        onOpen = { navController.navigate("now_playing") },
+                    )
+                }
+                NavigationBar {
+                    val currentDest = navBackStackEntry?.destination
+                    topDests.forEach { dest ->
                     NavigationBarItem(
                         icon = {
                             Image(
@@ -157,6 +202,7 @@ fun HomeScreen(
                             }
                         },
                     )
+                    }
                 }
             }
         },
@@ -167,11 +213,15 @@ fun HomeScreen(
             navController.navigate("trakt_public_list/${list.slug}/$listUser/$encodedName")
         }
 
+        CompositionLocalProvider(LocalWatchedState provides watchedLookup) {
         NavHost(
             navController = navController,
             startDestination = "movies",
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
+            composable("now_playing") {
+                NowPlayingScreen(onBack = { navController.popBackStack() })
+            }
             composable("movies") {
                 MediaBrowseScreen(
                     mediaType = MediaType.MOVIE,
@@ -339,6 +389,7 @@ fun HomeScreen(
                 )
             }
             composable("rd") { RdScreen(onGoToSettings = onGoToSettings) }
+        }
         }
     }
 }

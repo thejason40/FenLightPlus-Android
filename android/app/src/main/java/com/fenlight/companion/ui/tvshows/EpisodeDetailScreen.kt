@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
@@ -56,6 +55,7 @@ fun EpisodeDetailScreen(
     if (showPlaybackOptions) {
         PlaybackOptionsSheet(
             onSelect = { mode -> vm.play(showId, numEpisodes = 1, mode = mode) },
+            onPlayMultiple = { showCountDialog = true },
             onDismiss = { showPlaybackOptions = false },
         )
     }
@@ -147,12 +147,6 @@ fun EpisodeDetailScreen(
                         FilledIconButton(onClick = { vm.play(showId) }) {
                             Icon(Icons.Default.PlayArrow, contentDescription = "Play")
                         }
-                        FilledTonalIconButton(onClick = { showCountDialog = true }) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.PlaylistPlay,
-                                contentDescription = "Play multiple episodes",
-                            )
-                        }
                         FilledTonalIconButton(onClick = { showPlaybackOptions = true }) {
                             Icon(Icons.Default.Tune, contentDescription = "Playback options")
                         }
@@ -165,13 +159,8 @@ fun EpisodeDetailScreen(
                 }
 
                 if (state.traktAuthed) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { vm.markWatched(showId, watched = true) }) {
-                            Text("Mark watched")
-                        }
-                        TextButton(onClick = { vm.markWatched(showId, watched = false) }) {
-                            Text("Mark unwatched")
-                        }
+                    TextButton(onClick = { vm.markWatched(showId, watched = !state.episodeWatched) }) {
+                        Text(if (state.episodeWatched) "Mark as unwatched" else "Mark as watched")
                     }
                 }
             }

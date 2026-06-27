@@ -1,15 +1,21 @@
 package com.fenlight.companion.ui.components
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -25,6 +31,8 @@ fun MediaCard(
     posterUrl: String?,
     modifier: Modifier = Modifier,
     rating: Double? = null,
+    // null = no indicator; 1f = fully watched (tick); 0<x<1 = partially watched (pie).
+    watchedProgress: Float? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
@@ -70,21 +78,83 @@ fun MediaCard(
             )
             // Rating chip at top-end
             if (rating != null && rating > 0) {
-                Surface(
-                    color = Color.Black.copy(alpha = 0.55f),
-                    shape = RoundedCornerShape(4.dp),
+                RatingBadge(
+                    rating = rating,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(4.dp),
-                ) {
-                    Text(
-                        text = "★ ${"%.1f".format(rating)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                    )
-                }
+                )
             }
+            // Watched indicator at top-start (clear of the title and rating)
+            watchedProgress?.let {
+                WatchedIndicator(
+                    progress = it,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Watched indicator: a plain white tick when complete, otherwise a white pie wedge of
+ *  progress (watched portion white, unwatched transparent). A soft drop shadow keeps it
+ *  legible on light poster artwork. */
+@Composable
+fun WatchedIndicator(progress: Float, modifier: Modifier = Modifier) {
+    val shadow = Color.Black.copy(alpha = 0.55f)
+    if (progress >= 1f) {
+        Box(modifier) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = shadow,
+                modifier = Modifier.size(20.dp).offset(x = 1.dp, y = 1.dp),
+            )
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = "Watched",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    } else {
+        Canvas(modifier = modifier.size(16.dp)) {
+            val d = size.minDimension
+            val o = 1.dp.toPx()
+            val sweep = progress.coerceIn(0f, 1f) * 360f
+            // Shadow wedge, then the white wedge on top; unwatched sector stays transparent.
+            drawArc(shadow, -90f, sweep, useCenter = true, topLeft = Offset(o, o), size = Size(d - o, d - o))
+            drawArc(Color.White, -90f, sweep, useCenter = true, topLeft = Offset.Zero, size = Size(d, d))
+        }
+    }
+}
+
+/** High-contrast rating pill: amber star + white number on a near-opaque dark background. */
+@Composable
+fun RatingBadge(rating: Double, modifier: Modifier = Modifier) {
+    Surface(
+        color = Color.Black.copy(alpha = 0.72f),
+        shape = RoundedCornerShape(4.dp),
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+        ) {
+            Icon(
+                Icons.Filled.Star,
+                contentDescription = null,
+                tint = Color(0xFFFFC107),
+                modifier = Modifier.size(13.dp),
+            )
+            Text(
+                text = "%.1f".format(rating),
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+            )
         }
     }
 }

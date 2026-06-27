@@ -23,6 +23,8 @@ import com.fenlight.companion.data.api.KodiRpc.PlaybackMode
 fun PlaybackOptionsSheet(
     onSelect: (PlaybackMode) -> Unit,
     onDismiss: () -> Unit,
+    // Episodes only: when provided, a "Play multiple episodes…" entry is shown.
+    onPlayMultiple: (() -> Unit)? = null,
 ) {
     val options = listOf(
         Triple(PlaybackMode.DEFAULT, "Play", "Autoplay the best matching source"),
@@ -44,6 +46,16 @@ fun PlaybackOptionsSheet(
                     supportingContent = { Text(subtitle) },
                     modifier = Modifier.clickable {
                         onSelect(mode)
+                        onDismiss()
+                    },
+                )
+            }
+            if (onPlayMultiple != null) {
+                ListItem(
+                    headlineContent = { Text("Play multiple episodes…") },
+                    supportingContent = { Text("Binge several episodes back-to-back from here") },
+                    modifier = Modifier.clickable {
+                        onPlayMultiple()
                         onDismiss()
                     },
                 )

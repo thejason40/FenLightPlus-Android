@@ -28,6 +28,8 @@ data class ListManagementState(
     val listsContainingTraktId: String? = null,
     val listsContainingTraktType: String? = null,
     val likedListIds: Set<Int> = emptySet(), // Trakt list ids the user has liked
+    val watchedMovieIds: Set<Int> = emptySet(),
+    val watchedShowProgress: Map<Int, Float> = emptyMap(),
 )
 
 class ListManagementViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,6 +52,18 @@ class ListManagementViewModel(application: Application) : AndroidViewModel(appli
             val traktToken = app.prefs.traktAccessToken.first()
             val tmdbToken = app.prefs.tmdbAccessToken.first()
             _state.update { it.copy(hasTraktAuth = traktToken.isNotBlank(), hasTmdbAuth = tmdbToken.isNotBlank()) }
+            if (traktToken.isNotBlank() &&
+                app.watchedState.state.value.movieIds.isEmpty() &&
+                app.watchedState.state.value.showIds.isEmpty()
+            ) {
+                app.watchedState.refresh()
+            }
+        }
+        // Mirror the shared watched state so the sheet shows the right single toggle.
+        viewModelScope.launch {
+            app.watchedState.state.collect { w ->
+                _state.update { it.copy(watchedMovieIds = w.movieIds, watchedShowProgress = w.showProgress) }
+            }
         }
         loadWatchlist()
     }
@@ -128,6 +142,7 @@ class ListManagementViewModel(application: Application) : AndroidViewModel(appli
                 app.authedTraktApi.addToHistory(
                     mapOf(traktKey(mediaType) to listOf(mapOf("ids" to mapOf("tmdb" to tmdbId)))),
                 )
+                app.watchedState.setWatched(tmdbId, isMovie(mediaType), watched = true)
                 invalidateContinueWatching(mediaType)
                 toast("Marked as watched")
             } catch (e: Exception) {
@@ -142,12 +157,20 @@ class ListManagementViewModel(application: Application) : AndroidViewModel(appli
                 app.authedTraktApi.removeFromHistory(
                     mapOf(traktKey(mediaType) to listOf(mapOf("ids" to mapOf("tmdb" to tmdbId)))),
                 )
+                app.watchedState.setWatched(tmdbId, isMovie(mediaType), watched = false)
                 invalidateContinueWatching(mediaType)
                 toast("Marked as unwatched")
             } catch (e: Exception) {
                 toast("Failed: ${e.message}")
             }
         }
+    }
+
+    private fun isMovie(mediaType: String) = MediaType.from(mediaType) == MediaType.MOVIE
+
+    /** Lazily resolve a show's completion fraction so the sheet's toggle is accurate. */
+    fun ensureWatchedProgress(tmdbId: Int, mediaType: String) {
+        if (!isMovie(mediaType)) app.watchedState.requestShowProgress(tmdbId)
     }
 
     // Watched changes for shows affect Continue Watching; drop the cache so it re-syncs.

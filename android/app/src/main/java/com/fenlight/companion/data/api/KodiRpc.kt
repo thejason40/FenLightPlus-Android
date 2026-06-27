@@ -1,5 +1,8 @@
 package com.fenlight.companion.data.api
 
+import com.fenlight.companion.data.model.KodiPlayerProperties
+import com.fenlight.companion.data.model.KodiPlayingItem
+import com.fenlight.companion.data.model.KodiSubtitle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Credentials
@@ -7,6 +10,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -16,8 +20,10 @@ class KodiRpc(
     private val port: Int,
     private val username: String = "",
     private val password: String = "",
+    // Polling reuses one shared client; ad-hoc callers fall back to a private one.
+    sharedClient: OkHttpClient? = null,
 ) {
-    private val client = OkHttpClient.Builder()
+    private val client = sharedClient ?: OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .build()
@@ -48,6 +54,118 @@ class KodiRpc(
         result.optString("result") == "pong"
     } catch (_: Exception) {
         false
+    }
+
+    // ---- Now-playing: state reads ----
+
+    /** Returns the active video player id, or null when nothing is playing. */
+    suspend fun activeVideoPlayerId(): Int? {
+        val arr = call("Player.GetActivePlayers").optJSONArray("result") ?: return null
+        if (arr.length() == 0) return null
+        for (i in 0 until arr.length()) {
+            val p = arr.optJSONObject(i) ?: continue
+            if (p.optString("type") == "video") return p.optInt("playerid")
+        }
+        return arr.optJSONObject(0)?.optInt("playerid")
+    }
+
+    suspend fun playerProperties(playerId: Int): KodiPlayerProperties {
+        val params = JSONObject()
+            .put("playerid", playerId)
+            .put(
+                "properties",
+                JSONArray(listOf("time", "totaltime", "percentage", "speed", "subtitleenabled", "currentsubtitle", "subtitles")),
+            )
+        val r = call("Player.GetProperties", params).optJSONObject("result") ?: JSONObject()
+        val subtitleEnabled = r.optBoolean("subtitleenabled", false)
+        val currentSub = r.optJSONObject("currentsubtitle")
+        val currentIndex = if (subtitleEnabled && currentSub != null && currentSub.has("index")) currentSub.optInt("index") else null
+        val subs = mutableListOf<KodiSubtitle>()
+        r.optJSONArray("subtitles")?.let { a ->
+            for (i in 0 until a.length()) {
+                val s = a.optJSONObject(i) ?: continue
+                subs += KodiSubtitle(
+                    index = s.optInt("index", i),
+                    name = s.optString("name", ""),
+                    language = s.optString("language", ""),
+                )
+            }
+        }
+        return KodiPlayerProperties(
+            positionSec = r.optJSONObject("time").secondsOrZero(),
+            durationSec = r.optJSONObject("totaltime").secondsOrZero(),
+            percentage = r.optDouble("percentage", 0.0),
+            speed = r.optInt("speed", 0),
+            subtitleEnabled = subtitleEnabled,
+            currentSubtitleIndex = currentIndex,
+            subtitles = subs,
+        )
+    }
+
+    suspend fun playerItem(playerId: Int): KodiPlayingItem {
+        val params = JSONObject()
+            .put("playerid", playerId)
+            .put("properties", JSONArray(listOf("title", "showtitle", "season", "episode", "year", "uniqueid", "file")))
+        val item = call("Player.GetItem", params).optJSONObject("result")?.optJSONObject("item") ?: JSONObject()
+        val uniqueTmdb = item.optJSONObject("uniqueid")?.optString("tmdb").orEmptyToNull()?.toIntOrNull()
+        val file = item.optString("file").ifBlank { null }
+        return KodiPlayingItem(
+            type = item.optString("type"),
+            title = item.optString("title"),
+            showTitle = item.optString("showtitle").ifBlank { null },
+            season = item.optInt("season", -1).takeIf { it >= 0 },
+            episode = item.optInt("episode", -1).takeIf { it >= 0 },
+            year = item.optInt("year", 0).takeIf { it > 0 },
+            tmdbId = uniqueTmdb ?: parseTmdbIdFromFile(file),
+            file = file,
+        )
+    }
+
+    // ---- Now-playing: controls ----
+
+    suspend fun playPause(playerId: Int) {
+        call("Player.PlayPause", JSONObject().put("playerid", playerId))
+    }
+
+    suspend fun stopPlayer(playerId: Int) {
+        call("Player.Stop", JSONObject().put("playerid", playerId))
+    }
+
+    /** Absolute seek to a percentage (0..100) — used by the scrubber. */
+    suspend fun seekPercentage(playerId: Int, percent: Double) {
+        val params = JSONObject()
+            .put("playerid", playerId)
+            .put("value", JSONObject().put("percentage", percent.coerceIn(0.0, 100.0)))
+        call("Player.Seek", params)
+    }
+
+    /** Relative seek by [seconds] (negative to rewind) — used by skip buttons. */
+    suspend fun seekRelative(playerId: Int, seconds: Int) {
+        val params = JSONObject()
+            .put("playerid", playerId)
+            .put("value", JSONObject().put("seconds", seconds))
+        call("Player.Seek", params)
+    }
+
+    /** Select a specific subtitle track and show it. */
+    suspend fun setSubtitleIndex(playerId: Int, index: Int) {
+        call("Player.SetSubtitle", JSONObject().put("playerid", playerId).put("subtitle", index).put("enable", true))
+    }
+
+    /** [command] is one of "off", "on", "next", "previous". */
+    suspend fun setSubtitle(playerId: Int, command: String) {
+        call("Player.SetSubtitle", JSONObject().put("playerid", playerId).put("subtitle", command))
+    }
+
+    private fun JSONObject?.secondsOrZero(): Int =
+        if (this == null) 0 else optInt("hours") * 3600 + optInt("minutes") * 60 + optInt("seconds")
+
+    private fun String?.orEmptyToNull(): String? = this?.ifBlank { null }
+
+    private fun parseTmdbIdFromFile(file: String?): Int? {
+        if (file == null) return null
+        val m = Regex("[?&]tmdb_id=(\\d+)").find(file) ?: return null
+        return m.groupValues[1].toIntOrNull()
     }
 
     suspend fun playUrl(url: String) {

@@ -17,6 +17,7 @@ data class EpisodeDetailUiState(
     val error: String? = null,
     val playMessage: String? = null,
     val traktAuthed: Boolean = false,
+    val episodeWatched: Boolean = false,
 )
 
 class EpisodeDetailViewModel(application: Application) : AndroidViewModel(application) {
@@ -48,6 +49,7 @@ class EpisodeDetailViewModel(application: Application) : AndroidViewModel(applic
                         )
                     }
                 }
+                refreshEpisodeWatched(showId, season, episodeNumber)
             } catch (e: Exception) {
                 _state.update { it.copy(isLoading = false, error = e.message) }
             }
@@ -100,12 +102,33 @@ class EpisodeDetailViewModel(application: Application) : AndroidViewModel(applic
                 // Watched changes affect Continue Watching; drop the cache so it re-syncs.
                 app.prefs.saveTraktCwCache("")
                 _state.update {
-                    it.copy(playMessage = if (watched) "Marked S${ep.seasonNumber}E${ep.episodeNumber} watched" else "Marked S${ep.seasonNumber}E${ep.episodeNumber} unwatched")
+                    it.copy(
+                        episodeWatched = watched,
+                        playMessage = if (watched) "Marked S${ep.seasonNumber}E${ep.episodeNumber} watched" else "Marked S${ep.seasonNumber}E${ep.episodeNumber} unwatched",
+                    )
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(playMessage = "Failed: ${e.message}") }
             }
         }
+    }
+
+    // Determine if this episode is already watched. Only the (cheap) progress call is made
+    // for shows we know have history; unwatched shows are treated as unwatched with no call.
+    private suspend fun refreshEpisodeWatched(showId: Int, season: Int, episodeNumber: Int) {
+        if (!_state.value.traktAuthed) return
+        val slug = app.watchedState.slugFor(showId)
+        val watched = if (slug == null) {
+            false
+        } else {
+            runCatching {
+                app.authedTraktApi.showEpisodeProgress(slug)
+                    .seasons.firstOrNull { it.number == season }
+                    ?.episodes?.firstOrNull { it.number == episodeNumber }
+                    ?.completed ?: false
+            }.getOrDefault(false)
+        }
+        _state.update { it.copy(episodeWatched = watched) }
     }
 
     fun clearPlayMessage() = _state.update { it.copy(playMessage = null) }

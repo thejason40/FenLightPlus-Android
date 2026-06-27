@@ -124,10 +124,15 @@ fun BrowseRow(
                                 onLongClick = { onItemLongClick(item) },
                             )
                         } else {
+                            val watched = LocalWatchedState.current
+                            if (watched.needsProgress(item.id)) {
+                                LaunchedEffect(item.id) { watched.requestProgress(item.id) }
+                            }
                             MediaCard(
                                 title = item.title,
                                 posterUrl = item.posterUrl,
                                 rating = item.rating,
+                                watchedProgress = watched.progressFor(item.id),
                                 onClick = { onItemClick(item) },
                                 onLongClick = { onItemLongClick(item) },
                             )

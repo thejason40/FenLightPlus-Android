@@ -121,7 +121,7 @@ fun MediaBrowseScreen(
                 }
                 HorizontalDivider()
             }
-            item(key = "add_row") {
+            item {
                 TextButton(
                     onClick = vm::showAddRowSheet,
                     modifier = Modifier.fillMaxWidth().padding(16.dp),

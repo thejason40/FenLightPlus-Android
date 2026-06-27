@@ -72,7 +72,7 @@ abstract class MediaCatalog(protected val app: FenLightApp) {
                     id = item.id,
                     title = item.title ?: item.name ?: "",
                     posterUrl = FenLightApp.posterUrl(item.posterPath),
-                    rating = null,
+                    rating = item.voteAverage.takeIf { it > 0 },
                     backdropUrl = null,
                 )
             }

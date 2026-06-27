@@ -192,6 +192,7 @@ data class TmdbListItem(
     @Json(name = "release_date") val releaseDate: String?,
     @Json(name = "first_air_date") val firstAirDate: String?,
     val overview: String,
+    @Json(name = "vote_average") val voteAverage: Double = 0.0,
 )
 
 @JsonClass(generateAdapter = true)

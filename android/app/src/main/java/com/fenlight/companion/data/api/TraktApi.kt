@@ -76,8 +76,15 @@ interface TraktApi {
     @GET("sync/watched/shows")
     suspend fun watchedShows(@Query("extended") extended: String = "noseasons"): List<TraktWatchedShow>
 
+    @GET("sync/watched/movies")
+    suspend fun watchedMovies(): List<TraktWatchedMovie>
+
     @GET("shows/{id}/progress/watched")
     suspend fun showProgress(@Path("id") id: String, @Query("extended") extended: String = "full"): TraktShowProgress
+
+    // Same endpoint, but parsed with per-episode completion for the episode screen's toggle.
+    @GET("shows/{id}/progress/watched")
+    suspend fun showEpisodeProgress(@Path("id") id: String): TraktShowProgressFull
 
     // Watched history — mark items watched / unwatched
     @POST("sync/history")

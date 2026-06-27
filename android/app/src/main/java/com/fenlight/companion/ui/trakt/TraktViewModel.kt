@@ -44,6 +44,8 @@ data class TraktUiState(
     val selectedListUser: String = "me",
     val watchlistMovies: List<TraktListItem> = emptyList(),
     val watchlistShows: List<TraktListItem> = emptyList(),
+    val watchlistMovieRatings: Map<Int, Double> = emptyMap(),
+    val watchlistShowRatings: Map<Int, Double> = emptyMap(),
     val recentHistory: List<TraktHistoryEntry> = emptyList(),
     val calendar: List<TraktCalendarEpisode> = emptyList(),
     val recentHistoryPage: Int = 0,
@@ -208,16 +210,34 @@ class TraktViewModel(application: Application) : AndroidViewModel(application) {
                     val movies = async { api.getWatchlist("movies") }
                     val shows = async { api.getWatchlist("shows") }
                     tabFetchedAt[TraktTab.WATCHLIST] = System.currentTimeMillis()
+                    val movieList = movies.await()
+                    val showList = shows.await()
                     _state.update { it.copy(
                         isLoading = false,
                         isRefreshing = false,
-                        watchlistMovies = movies.await(),
-                        watchlistShows = shows.await(),
+                        watchlistMovies = movieList,
+                        watchlistShows = showList,
                     )}
+                    enrichWatchlistRatings(movieList, showList)
                 }
             } catch (e: Exception) {
                 _state.update { it.copy(isLoading = false, isRefreshing = false, error = e.message) }
             }
+        }
+    }
+
+    // Fill in TMDB ratings for watchlist rows in the background (cached, so revisits are free).
+    private fun enrichWatchlistRatings(movies: List<TraktListItem>, shows: List<TraktListItem>) {
+        viewModelScope.launch {
+            val movieRatings = coroutineScope {
+                movies.mapNotNull { it.movie?.ids?.tmdb }.distinct()
+                    .map { id -> async { id to app.ratingFor(id, isMovie = true) } }.awaitAll()
+            }.mapNotNull { (id, r) -> r?.let { id to it } }.toMap()
+            val showRatings = coroutineScope {
+                shows.mapNotNull { it.show?.ids?.tmdb }.distinct()
+                    .map { id -> async { id to app.ratingFor(id, isMovie = false) } }.awaitAll()
+            }.mapNotNull { (id, r) -> r?.let { id to it } }.toMap()
+            _state.update { it.copy(watchlistMovieRatings = movieRatings, watchlistShowRatings = showRatings) }
         }
     }
 

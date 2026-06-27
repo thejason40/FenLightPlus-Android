@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import com.fenlight.companion.data.api.TmdbApi
 import com.fenlight.companion.data.api.TmdbV4Api
 import com.fenlight.companion.data.api.TraktApi
+import com.fenlight.companion.data.kodi.NowPlayingRepository
 import com.fenlight.companion.data.prefs.AppPreferences
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -25,6 +26,12 @@ import java.util.concurrent.TimeUnit
 class FenLightApp : Application() {
 
     val prefs by lazy { AppPreferences(this) }
+
+    /** Shared now-playing state for the remote (mini-bar + full screen). */
+    val nowPlaying by lazy { NowPlayingRepository(this) }
+
+    /** Shared Trakt watched state for the watched toggle + poster ticks. */
+    val watchedState by lazy { com.fenlight.companion.data.trakt.WatchedStateRepository(this) }
 
     val moshi = Moshi.Builder()
         .addLast(KotlinJsonAdapterFactory())
@@ -233,6 +240,24 @@ class FenLightApp : Application() {
     suspend fun getValidTraktAccessToken(): String = traktRefresher.validAccessToken()
 
     suspend fun getValidRdAccessToken(): String = rdRefresher.validAccessToken()
+
+    // In-memory TMDB rating cache, keyed by media type + id, so lists (e.g. the Trakt
+    // watchlist) can show ratings without re-fetching detail on every visit.
+    private val ratingCache = java.util.concurrent.ConcurrentHashMap<String, Double>()
+
+    /** TMDB vote average for a title, cached. Returns null on failure or when unrated. */
+    suspend fun ratingFor(tmdbId: Int, isMovie: Boolean): Double? {
+        val key = (if (isMovie) "m" else "t") + tmdbId
+        ratingCache[key]?.let { return it.takeIf { v -> v > 0 } }
+        return try {
+            val v = if (isMovie) tmdbApi.movieDetail(tmdbId, "").voteAverage
+            else tmdbApi.tvDetail(tmdbId, "").voteAverage
+            ratingCache[key] = v
+            v.takeIf { it > 0 }
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     companion object {
         const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/"
