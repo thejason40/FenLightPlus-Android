@@ -1,5 +1,11 @@
 package com.fenlight.companion.data.model
 
+/** A raw directory item returned by Files.GetDirectory (label + plugin file URL). */
+data class KodiDirItem(
+    val label: String,
+    val file: String,
+)
+
 /** A subtitle track reported by Kodi for the currently-playing item. */
 data class KodiSubtitle(
     val index: Int,

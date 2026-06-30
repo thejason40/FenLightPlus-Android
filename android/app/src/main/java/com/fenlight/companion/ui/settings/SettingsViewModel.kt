@@ -2,12 +2,9 @@ package com.fenlight.companion.ui.settings
 
 import android.app.Application
 import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.net.Uri
-import android.os.Build
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +15,7 @@ import com.fenlight.companion.data.update.UpdateInfo
 import com.fenlight.companion.data.update.UpdateResult
 import com.fenlight.companion.util.sha256Hex
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,6 +37,7 @@ data class SettingsUiState(
     val region: String = "",
     val excludeAdult: Boolean = true,
     val themeMode: String = "system",
+    val sourceSelection: String = "ask",
     val update: UpdateUiState = UpdateUiState(),
     val currentVersion: String = BuildConfig.VERSION_NAME,
     val currentVersionCode: Int = BuildConfig.VERSION_CODE,
@@ -68,6 +67,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             prefs.themeMode.collect { m -> _state.update { it.copy(themeMode = m) } }
         }
+        viewModelScope.launch {
+            prefs.sourceSelection.collect { s -> _state.update { it.copy(sourceSelection = s) } }
+        }
     }
 
     fun toggleCheckUpdateOnStartup(enabled: Boolean) {
@@ -84,6 +86,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setThemeMode(mode: String) {
         viewModelScope.launch { prefs.setThemeMode(mode) }
+    }
+
+    fun setSourceSelection(mode: String) {
+        viewModelScope.launch { prefs.setSourceSelection(mode) }
     }
 
     fun clearTraktCwCache() {
@@ -108,6 +114,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun downloadUpdate(info: UpdateInfo) {
         val context = getApplication<Application>()
         val destFile = File(context.getExternalFilesDir(null), "FenLightCompanion-update.apk")
+        if (destFile.exists()) destFile.delete()
         val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val request = DownloadManager.Request(Uri.parse(info.apkUrl))
             .setTitle("FenLight+ Companion update")
@@ -118,46 +125,60 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val downloadId = dm.enqueue(request)
         _state.update { it.copy(update = it.update.copy(downloading = true)) }
 
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context, intent: Intent) {
-                val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
-                if (id != downloadId) return
-                context.unregisterReceiver(this)
-                viewModelScope.launch(Dispatchers.IO) {
-                    val expected = info.sha256?.trim()?.lowercase()
-                    if (expected != null && sha256Of(destFile) != expected) {
-                        destFile.delete()
-                        // Reset to error-only state so the screen shows the failure, not the update offer
-                        _state.update {
-                            it.copy(update = UpdateUiState(error = "Update failed integrity check — download discarded"))
-                        }
-                        return@launch
-                    }
-                    _state.update { it.copy(update = it.update.copy(downloading = false)) }
-                    val uri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        destFile,
-                    )
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW)
-                            .setDataAndType(uri, "application/vnd.android.package-archive")
-                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
+        // Poll the DownloadManager rather than relying on ACTION_DOWNLOAD_COMPLETE.
+        // That broadcast is sent by the system process, so on Android 13+ a
+        // context-registered receiver only receives it with RECEIVER_EXPORTED, and it
+        // can be missed entirely if the app isn't running. Polling is reliable everywhere.
+        viewModelScope.launch(Dispatchers.IO) {
+            while (true) {
+                val (status, reason) = queryDownload(dm, downloadId)
+                if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                    onDownloadFinished(context, info, destFile)
+                    return@launch
                 }
+                if (status == DownloadManager.STATUS_FAILED) {
+                    destFile.delete()
+                    _state.update {
+                        it.copy(update = UpdateUiState(error = "Download failed (code $reason)"))
+                    }
+                    return@launch
+                }
+                delay(750)
             }
         }
-        @Suppress("UnspecifiedRegisterReceiverFlag")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(
-                receiver,
-                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-                Context.RECEIVER_NOT_EXPORTED,
-            )
-        } else {
-            context.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+    }
+
+    private fun queryDownload(dm: DownloadManager, downloadId: Long): Pair<Int, Int> {
+        dm.query(DownloadManager.Query().setFilterById(downloadId)).use { cursor ->
+            if (!cursor.moveToFirst()) return DownloadManager.STATUS_FAILED to -1
+            val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+            val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+            return status to reason
         }
+    }
+
+    private fun onDownloadFinished(context: Context, info: UpdateInfo, destFile: File) {
+        val expected = info.sha256?.trim()?.lowercase()
+        if (expected != null && sha256Of(destFile) != expected) {
+            destFile.delete()
+            // Reset to error-only state so the screen shows the failure, not the update offer
+            _state.update {
+                it.copy(update = UpdateUiState(error = "Update failed integrity check — download discarded"))
+            }
+            return
+        }
+        _state.update { it.copy(update = it.update.copy(downloading = false)) }
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            destFile,
+        )
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 
     private fun sha256Of(file: File): String = sha256Hex(file.inputStream())

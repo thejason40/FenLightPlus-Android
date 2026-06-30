@@ -47,6 +47,7 @@ class AppPreferences(private val context: Context) {
         private val RD_USERNAME = stringPreferencesKey("rd_username")
 
         private val THEME_MODE = stringPreferencesKey("theme_mode")
+        private val SOURCE_SELECTION = stringPreferencesKey("source_selection") // ask | device | kodi
 
         private val TRAKT_CW_CACHE = stringPreferencesKey("trakt_cw_cache")
         private val WATCHED_STATE_CACHE = stringPreferencesKey("watched_state_cache")
@@ -85,6 +86,7 @@ class AppPreferences(private val context: Context) {
     val rdUsername: Flow<String> = context.dataStore.data.map { it[RD_USERNAME] ?: "" }
 
     val themeMode: Flow<String> = context.dataStore.data.map { it[THEME_MODE] ?: "system" }
+    val sourceSelection: Flow<String> = context.dataStore.data.map { it[SOURCE_SELECTION] ?: "ask" }
 
     val traktCwCacheJson: Flow<String> = context.dataStore.data.map { it[TRAKT_CW_CACHE] ?: "" }
     val watchedStateJson: Flow<String> = context.dataStore.data.map { it[WATCHED_STATE_CACHE] ?: "" }
@@ -191,6 +193,10 @@ class AppPreferences(private val context: Context) {
 
     suspend fun setThemeMode(mode: String) {
         context.dataStore.edit { it[THEME_MODE] = mode }
+    }
+
+    suspend fun setSourceSelection(mode: String) {
+        context.dataStore.edit { it[SOURCE_SELECTION] = mode }
     }
 
     suspend fun saveMovieBrowseRows(json: String) {

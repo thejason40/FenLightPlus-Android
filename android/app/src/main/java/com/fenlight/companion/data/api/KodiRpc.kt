@@ -1,5 +1,6 @@
 package com.fenlight.companion.data.api
 
+import com.fenlight.companion.data.model.KodiDirItem
 import com.fenlight.companion.data.model.KodiPlayerProperties
 import com.fenlight.companion.data.model.KodiPlayingItem
 import com.fenlight.companion.data.model.KodiSubtitle
@@ -31,7 +32,7 @@ class KodiRpc(
     private val endpoint get() = "http://$host:$port/jsonrpc"
     private val json = "application/json".toMediaType()
 
-    private suspend fun call(method: String, params: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun call(method: String, params: JSONObject? = null, readTimeoutSeconds: Long = 0): JSONObject = withContext(Dispatchers.IO) {
         val body = JSONObject().apply {
             put("jsonrpc", "2.0")
             put("id", 1)
@@ -44,7 +45,12 @@ class KodiRpc(
         if (username.isNotBlank()) {
             reqBuilder.header("Authorization", Credentials.basic(username, password))
         }
-        val response = client.newCall(reqBuilder.build()).execute()
+        // Some calls (e.g. scraping via Files.GetDirectory) block for a long time; widen
+        // the read timeout for those without disturbing the shared client's defaults.
+        val httpClient = if (readTimeoutSeconds > 0) {
+            client.newBuilder().readTimeout(readTimeoutSeconds, TimeUnit.SECONDS).build()
+        } else client
+        val response = httpClient.newCall(reqBuilder.build()).execute()
         if (!response.isSuccessful) throw IOException("Kodi returned ${response.code}")
         JSONObject(response.body?.string() ?: "{}")
     }
@@ -55,6 +61,38 @@ class KodiRpc(
     } catch (_: Exception) {
         false
     }
+
+    // ---- Device source selection ----
+
+    /**
+     * Runs a plugin directory and returns its items over JSON-RPC. Used to list scraped
+     * sources (a long, blocking call while FenLight+ scrapes). JSON-RPC errors surface as
+     * an empty list rather than throwing.
+     */
+    suspend fun getDirectory(directory: String, readTimeoutSeconds: Long = 120): List<KodiDirItem> {
+        val params = JSONObject().put("directory", directory).put("media", "video")
+        val result = call("Files.GetDirectory", params, readTimeoutSeconds).optJSONObject("result")
+            ?: return emptyList()
+        val arr = result.optJSONArray("files") ?: return emptyList()
+        val out = ArrayList<KodiDirItem>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            out.add(KodiDirItem(label = o.optString("label"), file = o.optString("file")))
+        }
+        return out
+    }
+
+    /** Fork-safe probe: true only when the installed FenLight build implements device select. */
+    suspend fun supportsDeviceSelect(): Boolean = try {
+        getDirectory("plugin://plugin.video.fenlight/?mode=app_capabilities", readTimeoutSeconds = 10)
+            .any { it.file.contains("device_select=1") }
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Scrape sources for on-device selection (blocks while FenLight+ scrapes silently). */
+    suspend fun listSources(query: String): List<KodiDirItem> =
+        getDirectory("plugin://plugin.video.fenlight/?mode=app_list_sources&$query")
 
     // ---- Now-playing: state reads ----
 

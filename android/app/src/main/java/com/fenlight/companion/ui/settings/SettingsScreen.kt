@@ -80,6 +80,26 @@ fun SettingsScreen(
                 }
             }
 
+            // ── Playback ──────────────────────────────────────────────────────
+            SettingsSection(title = "Playback") {
+                Text(
+                    "When selecting a source, choose where to pick it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                val sourceModes = listOf("ask" to "Always ask", "device" to "This device", "kodi" to "On Kodi")
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    sourceModes.forEachIndexed { index, (value, label) ->
+                        SegmentedButton(
+                            selected = state.sourceSelection == value,
+                            onClick = { vm.setSourceSelection(value) },
+                            shape = SegmentedButtonDefaults.itemShape(index, sourceModes.size),
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+
             // ── About ─────────────────────────────────────────────────────────
             SettingsSection(title = "About") {
                 Row(

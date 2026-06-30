@@ -1,11 +1,10 @@
 package com.fenlight.companion.data.update
 
-import com.squareup.moshi.Moshi
-import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 // Host this file at https://thejason40.github.io/apk/version.json
@@ -45,10 +44,6 @@ class UpdateChecker(
             .build()
     }
 
-    private val moshi: Moshi = Moshi.Builder()
-        .addLast(KotlinJsonAdapterFactory())
-        .build()
-
     suspend fun check(currentVersionCode: Int): UpdateResult = withContext(Dispatchers.IO) {
         try {
             val response = client.newCall(
@@ -59,7 +54,9 @@ class UpdateChecker(
             if (!response.isSuccessful) return@withContext UpdateResult.Error("HTTP ${response.code}")
             val body = response.body?.string()
                 ?: return@withContext UpdateResult.Error("Empty response")
-            val info = moshi.adapter(UpdateInfo::class.java).fromJson(body)
+            // Parse with org.json (built into Android) rather than reflective Moshi:
+            // immune to R8/obfuscation, so no keep-rules or Kotlin metadata required.
+            val info = runCatching { parseManifest(body) }.getOrNull()
                 ?: return@withContext UpdateResult.Error("Invalid response format")
             if (info.versionCode == 0 || info.versionName.isBlank() || info.apkUrl.isBlank())
                 return@withContext UpdateResult.Error("Incomplete update manifest")
@@ -68,5 +65,19 @@ class UpdateChecker(
         } catch (e: Exception) {
             UpdateResult.Error(e.message ?: "Network error")
         }
+    }
+
+    private fun parseManifest(body: String): UpdateInfo {
+        // Strip a leading UTF-8 BOM (Windows editors often add one); org.json,
+        // unlike Moshi/okio, does not tolerate it and would throw on the '{'.
+        val noBom = if (body.isNotEmpty() && body[0].code == 0xFEFF) body.substring(1) else body
+        val o = JSONObject(noBom.trim())
+        return UpdateInfo(
+            versionName = o.optString("versionName", ""),
+            versionCode = o.optInt("versionCode", 0),
+            apkUrl = o.optString("apkUrl", ""),
+            releaseNotes = o.optString("releaseNotes", ""),
+            sha256 = if (o.isNull("sha256")) null else o.optString("sha256", null),
+        )
     }
 }

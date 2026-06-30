@@ -34,6 +34,7 @@ fun EpisodeDetailScreen(
     season: Int,
     episodeNumber: Int,
     onBack: () -> Unit,
+    onOpenSourceSelect: (query: String, title: String) -> Unit = { _, _ -> },
     vm: EpisodeDetailViewModel = viewModel(),
 ) {
     LaunchedEffect(showId, season, episodeNumber) { vm.load(showId, season, episodeNumber) }
@@ -54,7 +55,19 @@ fun EpisodeDetailScreen(
     var showPlaybackOptions by remember { mutableStateOf(false) }
     if (showPlaybackOptions) {
         PlaybackOptionsSheet(
-            onSelect = { mode -> vm.play(showId, numEpisodes = 1, mode = mode) },
+            onPlayOnKodi = { mode -> vm.play(showId, numEpisodes = 1, mode = mode) },
+            onSelectOnDevice = { mode ->
+                val ep = state.episode
+                val flags = mode.extraParams.entries.joinToString("") { "&${it.key}=${it.value}" }
+                val title = listOfNotNull(
+                    state.showName.ifBlank { null },
+                    ep?.let { "S${it.seasonNumber}E${it.episodeNumber}" },
+                ).joinToString(" · ")
+                onOpenSourceSelect(
+                    "tmdb_id=$showId&media_type=episode&season=$season&episode=$episodeNumber$flags",
+                    title.ifBlank { "Select source" },
+                )
+            },
             onPlayMultiple = { showCountDialog = true },
             onDismiss = { showPlaybackOptions = false },
         )

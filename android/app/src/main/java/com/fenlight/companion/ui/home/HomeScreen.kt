@@ -31,6 +31,7 @@ import com.fenlight.companion.FenLightApp
 import com.fenlight.companion.R
 import com.fenlight.companion.ui.components.LocalWatchedState
 import com.fenlight.companion.ui.components.WatchedLookup
+import com.fenlight.companion.ui.sources.SourceSelectionScreen
 import com.fenlight.companion.ui.nowplaying.NowPlayingBar
 import com.fenlight.companion.ui.nowplaying.NowPlayingScreen
 import com.fenlight.companion.ui.nowplaying.NowPlayingViewModel
@@ -222,6 +223,13 @@ fun HomeScreen(
             composable("now_playing") {
                 NowPlayingScreen(onBack = { navController.popBackStack() })
             }
+            composable("source_select?q={q}&t={t}") { back ->
+                SourceSelectionScreen(
+                    query = back.arguments?.getString("q") ?: "",
+                    title = back.arguments?.getString("t") ?: "",
+                    onBack = { navController.popBackStack() },
+                )
+            }
             composable("movies") {
                 MediaBrowseScreen(
                     mediaType = MediaType.MOVIE,
@@ -264,6 +272,9 @@ fun HomeScreen(
                     onBack = { navController.popBackStack() },
                     onPersonClick = { personId -> navController.navigate("person/$personId") },
                     onMovieClick = { movieId -> navController.navigate("movie_detail/$movieId") },
+                    onOpenSourceSelect = { query, title ->
+                        navController.navigate("source_select?q=${android.net.Uri.encode(query)}&t=${android.net.Uri.encode(title)}")
+                    },
                 )
             }
             composable("tv") {
@@ -324,6 +335,9 @@ fun HomeScreen(
                     season = season,
                     episodeNumber = episode,
                     onBack = { navController.popBackStack() },
+                    onOpenSourceSelect = { query, title ->
+                        navController.navigate("source_select?q=${android.net.Uri.encode(query)}&t=${android.net.Uri.encode(title)}")
+                    },
                 )
             }
             composable("tmdb_lists") {

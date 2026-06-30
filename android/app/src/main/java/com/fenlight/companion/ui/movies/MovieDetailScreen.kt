@@ -39,6 +39,7 @@ fun MovieDetailScreen(
     onBack: () -> Unit,
     onPersonClick: (Int) -> Unit = {},
     onMovieClick: (Int) -> Unit = {},
+    onOpenSourceSelect: (query: String, title: String) -> Unit = { _, _ -> },
     vm: MovieDetailViewModel = viewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -53,7 +54,11 @@ fun MovieDetailScreen(
     var showPlaybackOptions by remember { mutableStateOf(false) }
     if (showPlaybackOptions && movie != null) {
         PlaybackOptionsSheet(
-            onSelect = { mode -> vm.playMovie(movie, mode) },
+            onPlayOnKodi = { mode -> vm.playMovie(movie, mode) },
+            onSelectOnDevice = { mode ->
+                val flags = mode.extraParams.entries.joinToString("") { "&${it.key}=${it.value}" }
+                onOpenSourceSelect("tmdb_id=${movie.id}&media_type=movie$flags", movie.title)
+            },
             onDismiss = { showPlaybackOptions = false },
         )
     }
